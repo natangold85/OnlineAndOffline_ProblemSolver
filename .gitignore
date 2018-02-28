@@ -7,3 +7,6 @@
 *.idb
 *.pdb
 *.opensdf
+*.exe
+*.bin
+*.pmdp
