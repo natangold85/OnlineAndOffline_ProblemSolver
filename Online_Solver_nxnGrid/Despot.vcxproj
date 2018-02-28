@@ -176,6 +176,7 @@
     <ClInclude Include="src\ObjInGrid.h" />
     <ClInclude Include="src\Observations.h" />
     <ClInclude Include="src\Self_Obj.h" />
+    <ClInclude Include="src\Tree_Properties.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include=".\src\core\belief.cpp" />
@@ -223,6 +224,7 @@
     <ClCompile Include="src\Observations.cpp" />
     <ClCompile Include="src\Self_Obj.cpp" />
     <ClCompile Include="src\despotMain.cpp" />
+    <ClCompile Include="src\Tree_Properties.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

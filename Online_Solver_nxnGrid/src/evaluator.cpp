@@ -14,7 +14,6 @@ inline int Max(int a, int b)
 /* =============================================================================
  * EvalLog class
  * =============================================================================*/
-std::vector<int> Tree_Properties::s_levelCounter;
 
 time_t EvalLog::start_time = 0;
 double EvalLog::curr_inst_start_time = 0;

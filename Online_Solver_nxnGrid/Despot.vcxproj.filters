@@ -201,6 +201,9 @@
     <ClInclude Include="src\Observations.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Tree_Properties.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include=".\src\evaluator.cpp">
@@ -336,6 +339,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\Observations.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Tree_Properties.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

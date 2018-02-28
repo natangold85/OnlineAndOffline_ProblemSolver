@@ -7,114 +7,11 @@
 #include "./ippc/client.h"
 #include "./util/util.h"
 
+#include "..\..\src\Tree_Properties.h"
+
 namespace despot {
 
-static std::vector<double> &operator+=(std::vector<double> &vec, const std::vector<double> &toAdd)
-{
-	if (vec.size() < toAdd.size())
-		vec.resize(toAdd.size(), 0);
 
-	for (int i = 0; i < toAdd.size(); ++i)
-			vec[i] += toAdd[i];
-
-	return vec;
-}
-
-static std::vector<double> &operator/=(std::vector<double> &vec, int toDivide)
-{
-	for (int i = 0; i < vec.size(); ++i)
-		vec[i] /= toDivide;
-
-	return vec;
-}
-
-static std::vector<std::vector<double>> &operator+=(std::vector<std::vector<double>> &vec, const std::vector<std::vector<double>> &toAdd)
-{
-	if (vec.size() < toAdd.size())
-		vec.resize(toAdd.size());
-
-	for (int i = 0; i < toAdd.size(); ++i)
-		vec[i] += toAdd[i];
-
-	return vec;
-}
-
-static std::vector<std::vector<double>> &operator/=(std::vector<std::vector<double>> &vec, int toDivide)
-{
-	for (int i = 0; i < vec.size(); ++i)
-		vec[i] /= toDivide;
-
-	return vec;
-}
-
-class Tree_Properties // NATAN CHANGES
-{
-public:
-	Tree_Properties() : m_height(0), m_size(0), m_levelSize(), m_levelActionSize(), m_preferredActionPortion() {};
-
-	void UpdateCount();
-	static void ZeroCount();
-	void Avg();
-
-	double m_height;
-	double m_size;
-	std::vector<double> m_levelSize;
-	std::vector<std::vector<double>> m_levelActionSize;
-	std::vector<double> m_preferredActionPortion;
-
-	static std::vector<int> s_levelCounter;
-};
-
-inline void Tree_Properties::UpdateCount()
-{
-	if (s_levelCounter.size() < m_levelSize.size())
-		s_levelCounter.resize(m_levelSize.size(), 0);
-	
-	for (int i = 0; i < m_levelSize.size(); ++i)
-		++s_levelCounter[i];
-}
-
-inline void Tree_Properties::ZeroCount()
-{
-	s_levelCounter.resize(0);
-}
-
-inline void Tree_Properties::Avg()
-{
-	if (s_levelCounter.size() == 0)
-		return;
-
-	int numTrees = s_levelCounter[0];
-	m_height /= numTrees;
-	m_size /= numTrees;
-	m_levelSize /= numTrees;
-	m_levelActionSize /= numTrees;
-
-	for (int i = 0; i < m_preferredActionPortion.size(); ++i)
-		m_preferredActionPortion[i] /= s_levelCounter[i];
-}
-
-inline Tree_Properties &operator+=(Tree_Properties &p1, Tree_Properties &p2) // NATAN CHANGES
-{
-	p1.m_height += p2.m_height;
-	p1.m_size += p2.m_size;
-	p1.m_levelSize += p2.m_levelSize;
-	p1.m_levelActionSize += p2.m_levelActionSize;
-	p1.m_preferredActionPortion += p2.m_preferredActionPortion;
-
-	return p1;
-}
-
-inline Tree_Properties &operator/=(Tree_Properties &p1, int toDivide) // NATAN CHANGES
-{
-	p1.m_height /= toDivide;
-	p1.m_size /= toDivide;
-	p1.m_levelSize /= toDivide;
-	p1.m_levelActionSize /= toDivide;
-	p1.m_preferredActionPortion /= toDivide;
-
-	return p1;
-}
 /* =============================================================================
  * EvalLog class
  * =============================================================================*/
