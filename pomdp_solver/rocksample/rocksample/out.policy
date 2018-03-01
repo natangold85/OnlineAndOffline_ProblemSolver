@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
-<Policy version="0.1" type="value" model="rs.pomdp" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="policyx.xsd">
-<AlphaVector vectorLength="9" numObsValue="1" numVectors="2">
-<Vector action="3" obsValue="0">9.5 9.5 10 10 9.5 9.5 10 10 0 </Vector>
-<Vector action="4" obsValue="0">-90.975 -90.975 -90.5 -90.5 -0.975 29.025 -90.5 -90.5 0 </Vector>
-</AlphaVector> </Policy>

@@ -1,6 +1,0 @@
-C:\Users\moshe\Documents\GitHub\Online_Solver_nxnGrid\TreeVisualizer\TreeVisualizer\TreeVisualizer\bin\Debug\TreeVisualizer.exe.config
-C:\Users\moshe\Documents\GitHub\Online_Solver_nxnGrid\TreeVisualizer\TreeVisualizer\TreeVisualizer\bin\Debug\TreeVisualizer.exe
-C:\Users\moshe\Documents\GitHub\Online_Solver_nxnGrid\TreeVisualizer\TreeVisualizer\TreeVisualizer\bin\Debug\TreeVisualizer.pdb
-C:\Users\moshe\Documents\GitHub\Online_Solver_nxnGrid\TreeVisualizer\TreeVisualizer\TreeVisualizer\obj\Debug\TreeVisualizer.csprojResolveAssemblyReference.cache
-C:\Users\moshe\Documents\GitHub\Online_Solver_nxnGrid\TreeVisualizer\TreeVisualizer\TreeVisualizer\obj\Debug\TreeVisualizer.exe
-C:\Users\moshe\Documents\GitHub\Online_Solver_nxnGrid\TreeVisualizer\TreeVisualizer\TreeVisualizer\obj\Debug\TreeVisualizer.pdb
