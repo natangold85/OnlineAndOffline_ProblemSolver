@@ -176,6 +176,7 @@
     <ClInclude Include="src\ObjInGrid.h" />
     <ClInclude Include="src\Observations.h" />
     <ClInclude Include="src\Self_Obj.h" />
+    <ClInclude Include="src\ThreadDataClass.h" />
     <ClInclude Include="src\Tree_Properties.h" />
   </ItemGroup>
   <ItemGroup>

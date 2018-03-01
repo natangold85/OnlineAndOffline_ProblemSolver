@@ -54,7 +54,7 @@ inline int Distance(int a, int b, int gridSize)
 
 
 /* =============================================================================
-* nxnGridGlobalActions Functions
+* nxnGridLocalActions Functions
 * =============================================================================*/
 
 nxnGridLocalActions::nxnGridLocalActions(int gridSize, int target, Self_Obj & self, std::vector<intVec> & objectsInitLoc)
@@ -172,6 +172,7 @@ int nxnGridLocalActions::NumActions() const
 	// num basic actions + attack for each enemy
 	return NUM_BASIC_ACTIONS + m_enemyVec.size();
 };
+
 void nxnGridLocalActions::PrintAction(int action, std::ostream & out) const
 {
 	out << s_ACTION_STR[action] << std::endl;

@@ -6,21 +6,25 @@
 class Tree_Properties // NATAN CHANGES
 {
 public:
-	Tree_Properties() : m_height(0), m_size(0), m_levelSize(), m_levelActionSize(), m_preferredActionPortion() {};
+	Tree_Properties() : m_nodeCount(0), m_size(0), m_nodeValue(0) {};
 
-	void UpdateCount();
-	static void ZeroCount();
-	void Avg();
+	/*MEMBERS*/
+	unsigned int m_nodeCount;
+	float m_nodeValue;
+	unsigned int m_size;
 
-	Tree_Properties & operator += (const Tree_Properties &p2);
 
-	double m_height;
-	double m_size;
-	std::vector<double> m_levelSize;
-	std::vector<std::vector<double>> m_levelActionSize;
-	std::vector<double> m_preferredActionPortion;
 
-	static std::vector<int> s_levelCounter;
+	//void UpdateCount();
+	//static void ZeroCount();
+	//void Avg();
+	//Tree_Properties & operator += (const Tree_Properties &p2);
+
+	//std::vector<double> m_levelSize;
+	//std::vector<std::vector<double>> m_levelActionSize;
+	//std::vector<double> m_preferredActionPortion;
+
+	//static std::vector<int> s_levelCounter;
 };
 
 # endif //TREE_PROPERTIES_H

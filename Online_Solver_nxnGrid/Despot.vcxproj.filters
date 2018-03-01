@@ -204,6 +204,9 @@
     <ClInclude Include="src\Tree_Properties.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\ThreadDataClass.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include=".\src\evaluator.cpp">

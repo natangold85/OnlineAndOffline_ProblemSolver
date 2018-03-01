@@ -5,7 +5,8 @@
 #include "../core/node.h"
 #include "../core/globals.h"
 
-#include "../../../include/despot/evaluator.h" // NATAN CHANGES
+//#include "../../../include/despot/evaluator.h" // NATAN CHANGES
+#include "..\..\..\src\Tree_Properties.h"
 
 namespace despot {
 
@@ -100,13 +101,14 @@ public:
 	POMCP(const DSPOMDP* model, POMCPPrior* prior, Belief* belief = NULL);
 	virtual ValuedAction Search();
 	virtual ValuedAction Search(double timeout);
+	virtual ValuedAction Search(ThreadDataStruct * threadData) override;
 
 	void reuse(bool r);
 	virtual void belief(Belief* b);
 	virtual void Update(int action, OBS_TYPE obs);
 
 	POMCPPrior* GetPrior() { return prior_; }; //NATAN CHANGES
-	void GetTreeProperties(Tree_Properties & properties) const; // NATAN CHANGES
+	void GetTreeProperties(std::vector<Tree_Properties> & childsProperties) const; // NATAN CHANGES
 	void SaveTreeInFile(std::ofstream & out) const; // NATAN CHANGES
 
 	static VNode* CreateVNode(int depth, const State*, POMCPPrior* prior,

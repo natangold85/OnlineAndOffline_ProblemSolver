@@ -11,6 +11,8 @@ inline int Max(int a, int b)
 {
 	return a * (a >= b) + b * (a < b);
 }
+
+
 /* =============================================================================
  * EvalLog class
  * =============================================================================*/
@@ -143,6 +145,43 @@ Evaluator::~Evaluator() {
 }
 
 
+bool Evaluator::RunStep(ThreadDataStruct * threadData, int step) 
+{
+	// search for action
+	bool observationRecieved = false;
+	bool terminal = false;
+
+	// build tree (exit when action is needed)
+	solver_->Search(threadData);
+
+	{	//  observation recieved
+		std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
+		threadData->m_actionNeeded = false;
+		threadData->m_actionRecieved = true;
+		terminal = threadData->m_terminal;
+	}
+
+	if (terminal)
+		return true;
+
+	while (!observationRecieved)
+	{
+		std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
+		observationRecieved = threadData->m_observationRecieved;
+		terminal = threadData->m_terminal;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
+
+		
+		// update if not terminal
+		if (!terminal)
+			solver_->Update(threadData->m_action, threadData->m_lastObservation);
+	}
+	return terminal;
+}
+
 bool Evaluator::RunStep(int step, int round) {
 	if (target_finish_time_ != -1 && get_time_second() > target_finish_time_) {
 		if (!Globals::config.silence && out_)
@@ -160,7 +199,7 @@ bool Evaluator::RunStep(int step, int round) {
 
 	double step_start_t = get_time_second();
 
-	double start_t = get_time_second();
+	 double start_t = get_time_second();
 
 	
 	int action;
@@ -172,9 +211,6 @@ bool Evaluator::RunStep(int step, int round) {
 		double reward;
 		action = static_cast<nxnGrid *>(model_)->ChoosePreferredAction(static_cast<POMCP *>(solver_)->GetPrior(), model_, reward);
 	}
-
-	if (static_cast<nxnGrid *>(model_)->NoEnemies(state_))
-		action = 0;
 
 	double endSearch = get_time_second();
 	
@@ -194,11 +230,6 @@ bool Evaluator::RunStep(int step, int round) {
 	bool terminal;
 
 
-	// gathering tree properties
-	Tree_Properties propSingleStep;
-	static_cast<POMCP *>(solver_)->GetTreeProperties(propSingleStep);
-	propSingleStep.UpdateCount();
-	tree_properties_[round] += propSingleStep;
 	if (nxnGrid::ToSendTree())	
 		static_cast<POMCP *>(solver_)->SendTree(state_);
 
@@ -210,6 +241,16 @@ bool Evaluator::RunStep(int step, int round) {
 		<< endl;
 
 	start_t = get_time_second();
+
+	// gathering tree properties
+	std::vector<Tree_Properties> actionsTreeData(model_->NumActions());
+	GetTreeProperties(actionsTreeData);
+
+	std::cout << "- Tree Properties: (size,count,value)\n";
+	for (auto actionProp : actionsTreeData)
+	{
+		std::cout << actionProp.m_size << ", " << actionProp.m_nodeCount << ", " << actionProp.m_nodeValue << "\n";
+	}
 
 	if (!Globals::config.silence && out_) {
 		*out_ << "- Action = ";
@@ -345,54 +386,54 @@ void Evaluator::PrintFinalResults(std::string & buffer) const
 void Evaluator::PrintTreeProp(std::string & buffer) const
 {
 
-	buffer += "\n\nHeight:\n";
-	double maxHeight = 0;
-	for (auto v : tree_properties_)
-	{
-		if (isinf(v.m_height))
-			buffer += "0, ";
-		else
-		{
-			maxHeight = Max(maxHeight, v.m_height);
-			buffer += std::to_string(v.m_height) + ", ";
-		}
-	}
+	//buffer += "\n\nHeight:\n";
+	//double maxHeight = 0;
+	//for (auto v : tree_properties_)
+	//{
+	//	if (isinf(v.m_height))
+	//		buffer += "0, ";
+	//	else
+	//	{
+	//		maxHeight = Max(maxHeight, v.m_height);
+	//		buffer += std::to_string(v.m_height) + ", ";
+	//	}
+	//}
 
-	buffer += "\n\Size:\n";
-	for (auto v : tree_properties_)
-	{
-		if (isinf(v.m_size))
-			buffer += "0, ";
-		else
-			buffer += std::to_string(v.m_size) + ", ";
-	}
+	//buffer += "\n\Size:\n";
+	//for (auto v : tree_properties_)
+	//{
+	//	if (isinf(v.m_size))
+	//		buffer += "0, ";
+	//	else
+	//		buffer += std::to_string(v.m_size) + ", ";
+	//}
 
-	buffer += "\n\level sizes:\n";
-	for (int i = 0; i < maxHeight - 1; ++i)
-	{
-		for (auto v : tree_properties_)
-		{
-			if (i < v.m_levelSize.size())
-				buffer += std::to_string(v.m_levelSize[i]) + ", ";
-			else
-				buffer += "0 , ";
-		}
-		buffer += "\n";
-	}
+	//buffer += "\n\level sizes:\n";
+	//for (int i = 0; i < maxHeight - 1; ++i)
+	//{
+	//	for (auto v : tree_properties_)
+	//	{
+	//		if (i < v.m_levelSize.size())
+	//			buffer += std::to_string(v.m_levelSize[i]) + ", ";
+	//		else
+	//			buffer += "0 , ";
+	//	}
+	//	buffer += "\n";
+	//}
 
 
-	buffer += "\nlevel portion:\n";
-	for (int i = 0; i < maxHeight - 1; ++i)
-	{
-		for (auto v : tree_properties_)
-		{
-			if (i < v.m_levelSize.size())
-				buffer += std::to_string(v.m_preferredActionPortion[i]) + ", ";
-			else
-				buffer += "0 , ";
-		}
-		buffer += "\n";
-	}
+	//buffer += "\nlevel portion:\n";
+	//for (int i = 0; i < maxHeight - 1; ++i)
+	//{
+	//	for (auto v : tree_properties_)
+	//	{
+	//		if (i < v.m_levelSize.size())
+	//			buffer += std::to_string(v.m_preferredActionPortion[i]) + ", ";
+	//		else
+	//			buffer += "0 , ";
+	//	}
+	//	buffer += "\n";
+	//}
 
 }
 

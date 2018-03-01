@@ -12,9 +12,13 @@
 #include "./core/pomdp.h"
 #include "./ippc/client.h"
 
-#include "./evaluator.h"
+#include "evaluator.h"
+
+#include "..\..\src\ThreadDataClass.h"
 
 namespace despot {
+
+
 
 void disableBufferedIO(void);
 
@@ -162,6 +166,8 @@ public:
                     option::Option* options, int num_runs, bool search_solver,
                     Solver*& solver, std::string simulator_type,
                     clock_t main_clock_start, int start_run);
+
+  void RunRound(Evaluator * evaluator, DSPOMDP * model, int round);
 
   void PrintResult(int num_runs, Evaluator* simulator,
 				clock_t main_clock_start, std::string & result);

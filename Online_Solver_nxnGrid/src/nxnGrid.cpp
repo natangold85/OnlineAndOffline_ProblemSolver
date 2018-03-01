@@ -50,8 +50,8 @@ const double nxnGrid::REWARD_LOSS = -100.0;
 const double nxnGrid::REWARD_KILL_ENEMY = 0.0;
 const double nxnGrid::REWARD_KILL_NINV = REWARD_LOSS;
 const double nxnGrid::REWARD_ILLEGAL_MOVE = -200.0;
-const double nxnGrid::REWARD_STEP = -1.0;
-const double nxnGrid::REWARD_FIRE = -1.0;
+const double nxnGrid::REWARD_STEP = 0;
+const double nxnGrid::REWARD_FIRE = 0;
 // for lut
 nxnGrid::lut_t nxnGrid::s_LUT;
 int nxnGrid::s_lutGridSize;
@@ -886,9 +886,10 @@ void nxnGrid::DisplayParameters(std::ofstream & out) const
 		out << ")";
 	}
 }
+
 void nxnGrid::PrintState(const State & s, std::ostream & out) const
 {
-	const nxnGridState& state = static_cast<const nxnGridState&>(s);
+	nxnGridState state(s.state_id);
 	out << state.text() << "\n";
 }
 
@@ -901,6 +902,8 @@ void nxnGrid::PrintObs(const State & state, OBS_TYPE obs, std::ostream & out) co
 	nxnGridState obsState(obs);
 	out << obsState.text() << "\n";
 }
+
+
 
 bool nxnGrid::InRange(int locationSelf, int locationObj, double range, int gridSize)
 {

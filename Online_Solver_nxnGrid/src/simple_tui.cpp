@@ -6,6 +6,7 @@
 
 using namespace std;
 
+
 namespace despot {
 
 void disableBufferedIO(void) {
@@ -16,6 +17,21 @@ void disableBufferedIO(void) {
   setvbuf(stdout, nullptr, _IONBF, 0);
   setvbuf(stdin, nullptr, _IONBF, 0);
   setvbuf(stderr, nullptr, _IONBF, 0);
+}
+
+void TreeBuilderThread(ThreadDataStruct * data)
+{
+	Evaluator * evaluator = reinterpret_cast<Evaluator *>(data->m_evaluator);
+
+	 for (int i = 0; i < INT_MAX; i++) 
+	 {
+		evaluator->RunStep(data, i);
+		{ // inform to builder that round is over
+			std::lock_guard<std::mutex> lock(data->m_flagsMutex);
+			if (data->m_terminal)
+				break;
+		}
+	 }
 }
 
 SimpleTUI::SimpleTUI() {}
@@ -252,35 +268,42 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
 
     simulator->InitRound();
 	int i = 0;
-	simulator->ResizeTreeProp(num_runs); // NATAN CHANGES
-	Tree_Properties::ZeroCount();	// NATAN CHANGES
-    for (; i < Globals::config.sim_len; i++) {
-      /*
-      default_out << "-----------------------------------Round " << round
-                  << " Step " << i << "-----------------------------------"
-                  << endl;*/
-      double step_start_t = get_time_second();
 
-      bool terminal = simulator->RunStep(i, round);
+	bool runParallel = false;
+	if (runParallel)
+		RunRound(simulator, model, round);
+	else
+	{	// original implementation
+		for (; i < Globals::config.sim_len; i++) {
+			/*
+			default_out << "-----------------------------------Round " << round
+			<< " Step " << i << "-----------------------------------"
+			<< endl;*/
+			double step_start_t = get_time_second();
 
-      if (terminal)
-        break;
 
-      double step_end_t = get_time_second();
-      logi << "[main] Time for step: actual / allocated = "
-           << (step_end_t - step_start_t) << " / " << EvalLog::allocated_time
-           << endl;
-      simulator->UpdateTimePerMove(step_end_t - step_start_t);
-      logi << "[main] Time per move set to " << Globals::config.time_per_move
-           << endl;
-      logi << "[main] Plan time ratio set to " << EvalLog::plan_time_ratio
-           << endl;
-    //  default_out << endl;
-    }
+
+			bool terminal = simulator->RunStep(i, round);
+
+			if (terminal)
+				break;
+
+			double step_end_t = get_time_second();
+			logi << "[main] Time for step: actual / allocated = "
+				<< (step_end_t - step_start_t) << " / " << EvalLog::allocated_time
+				<< endl;
+			simulator->UpdateTimePerMove(step_end_t - step_start_t);
+			logi << "[main] Time per move set to " << Globals::config.time_per_move
+				<< endl;
+			logi << "[main] Plan time ratio set to " << EvalLog::plan_time_ratio
+				<< endl;
+			//  default_out << endl;
+		}
+	}
+
     default_out << "Simulation terminated in " << simulator->step() << " steps"
                 << endl;
 
-	simulator->AvgTreeProp(round);
     double round_reward = simulator->EndRound();
 
 	number_steps_termination_.emplace_back(i);
@@ -298,6 +321,98 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
     exit(0);
   }
 }
+
+void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
+{
+	ThreadDataStruct dataForThread;
+	
+	dataForThread.m_evaluator = evaluator;
+	dataForThread.m_action = -1;
+	dataForThread.m_lastObservation = -1;
+	dataForThread.m_actionNeeded = false;
+	dataForThread.m_terminal = false;
+	dataForThread.m_observationRecieved = false;
+
+	std::thread treeBuilder(TreeBuilderThread, &dataForThread);
+	
+	bool terminal = false;
+	
+	while (!terminal)
+	{
+		double stepStart = get_time_second();
+		Sleep(1000);
+
+		double actionWanted = get_time_second();
+
+		// inform to builder that action is needed
+		{ 
+			std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
+			dataForThread.m_actionNeeded = true;
+		}
+		std::cout << ".\n..\n...\naction needed!!\n\n\n";
+
+		// wait for action is ready
+		bool actionRecieved = false;
+		while (!actionRecieved)
+		{
+			std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
+			actionRecieved = dataForThread.m_actionRecieved;
+		}
+
+		double actionWantedMsgDelievered = get_time_second();
+		
+		int action = -1;
+		std::vector<Tree_Properties> actionsTreeData(model->NumActions());
+		double reward;
+		OBS_TYPE obs;
+		State currState;
+
+		{ // take action and update observation
+			std::lock_guard<std::mutex> mainLock(dataForThread.m_mainMutex);
+			action = dataForThread.m_action;
+			
+			nxnGrid::UpdateRealAction(action);
+			
+			terminal = evaluator->ExecuteAction(action, reward, obs);
+			currState.state_id = evaluator->currStateId();
+			evaluator->GetTreeProperties(actionsTreeData);
+
+			dataForThread.m_lastObservation = obs;
+			std::lock_guard<std::mutex> flagsLock(dataForThread.m_flagsMutex);
+			dataForThread.m_observationRecieved = true;
+			dataForThread.m_actionRecieved = false;
+		}
+		
+		double actionCommited = get_time_second();
+
+		// prrint data
+		std::cout << "- Tree Properties: (size,count,value)\n";
+		for (auto actionProp : actionsTreeData)
+		{
+			std::cout << actionProp.m_size << ", " << actionProp.m_nodeCount << ", " << actionProp.m_nodeValue << "\n";
+		}
+
+		std::cout << "- Action = ";
+		model->PrintAction(action);
+		std::cout << "- Current State: : ";
+		model->PrintState(currState);
+		std::cout << "- Observation: : ";
+		model->PrintObs(currState, obs);
+		std::cout << "- ObsProb = " << model->ObsProb(obs, currState, action) << "\n";
+
+		std::cout << "\n- StepReward = " << reward << "\n";
+		std::cout << "\n\n\n";
+
+	}
+
+	{ // inform to builder that round is over
+		std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
+		dataForThread.m_terminal = true;
+	}
+
+	treeBuilder.join();
+}
+
 
 void SimpleTUI::PrintResult(int num_runs, Evaluator *simulator,
                             clock_t main_clock_start, std::string & result) {

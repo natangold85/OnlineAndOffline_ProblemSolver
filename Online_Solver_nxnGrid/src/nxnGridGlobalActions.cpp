@@ -52,9 +52,8 @@ inline int Distance(int a, int b, int gridSize)
 	return xDiff * xDiff + yDiff * yDiff;
 }
 
-
 /* =============================================================================
-* nxnGridGlobalActions Functions
+* nxnGridLocalActions Functions
 * =============================================================================*/
 
 nxnGridGlobalActions::nxnGridGlobalActions(int gridSize, int target, Self_Obj & self, std::vector<intVec> & objectsInitLoc, bool isMoveFromEnemyExist)
@@ -174,6 +173,8 @@ ValuedAction nxnGridGlobalActions::GetMinRewardAction() const
 {
 	return ValuedAction(rand() % NumActions(), -10.0);
 }
+
+
 
 void nxnGridGlobalActions::PrintAction(int action, std::ostream & out) const
 {

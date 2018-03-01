@@ -29,7 +29,7 @@ public:
 	nxnGridState(STATE_TYPE state_id, double weight = 0.0);
 	
 	/// print the state
-	std::string text() const;
+	std::string text() const override;
 
 	///update state given a new state
 	void UpdateState(STATE_TYPE newStateIdx);

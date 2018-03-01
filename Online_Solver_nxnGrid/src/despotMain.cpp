@@ -107,22 +107,22 @@ int main(int argc, char* argv[])
 	nxnGrid::InitStaticMembers(s_ONLINE_ALGO, s_PERIOD_OF_DECISION, s_RESAMPLE_FROM_LAST_OBS);
 	Globals::config.time_per_move = s_SEARCH_PRIOD;
 
-	// init lut
-	std::map<STATE_TYPE, std::vector<double>> offlineLut;
-	ReadOfflineLUT(s_LUTFILENAMES[0], offlineLut);
-	nxnGrid::InitLUT(offlineLut, s_LUT_GRIDSIZE[0], s_CALCTYPE[0]);
-	// create output file
+	//// init lut
+	//std::map<STATE_TYPE, std::vector<double>> offlineLut;
+	//ReadOfflineLUT(s_LUTFILENAMES[0], offlineLut);
+	//nxnGrid::InitLUT(offlineLut, s_LUT_GRIDSIZE[0], s_CALCTYPE[0]);
+	//// create output file
 
-	std::string outputFName(s_LUTFILENAMES[0]);
-	// pop ".bin"
-	outputFName.pop_back();
-	outputFName.pop_back();
-	outputFName.pop_back();
-	outputFName.pop_back();
+	//std::string outputFName(s_LUTFILENAMES[0]);
+	//// pop ".bin"
+	//outputFName.pop_back();
+	//outputFName.pop_back();
+	//outputFName.pop_back();
+	//outputFName.pop_back();
 
-	//outputFName.append("_resultOffline.txt");
-	outputFName.append("_result.txt");
-	Run(argc, argv, outputFName, numRuns);
+	////outputFName.append("_resultOffline.txt");
+	//outputFName.append("_result.txt");
+	//Run(argc, argv, outputFName, numRuns);
 
 	// init lut
 	std::map<STATE_TYPE, std::vector<double>> offlineLutNaive;

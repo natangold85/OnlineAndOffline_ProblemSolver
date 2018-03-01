@@ -7,10 +7,13 @@
 #include "./ippc/client.h"
 #include "./util/util.h"
 
+
+#include "./solver/pomcp.h"
+
 #include "..\..\src\Tree_Properties.h"
+#include "..\..\src\ThreadDataClass.h"
 
 namespace despot {
-
 
 /* =============================================================================
  * EvalLog class
@@ -81,6 +84,7 @@ public:
 		clock_t start_clockt, std::ostream* out);
 	virtual ~Evaluator();
 	
+	inline STATE_TYPE currStateId() { return state_->state_id; }
 	inline void out(std::ostream* o) {
 		out_ = o;
 	}
@@ -121,6 +125,7 @@ public:
 	virtual int Handshake(std::string instance) = 0; // Initialize simulator and return number of runs.
 	virtual void InitRound() = 0;
 
+	bool RunStep(ThreadDataStruct * threadData, int step);
 	bool RunStep(int step, int round);
 
 	virtual double EndRound() = 0; // Return total undiscounted reward for this round.
@@ -130,6 +135,8 @@ public:
 
 	virtual void UpdateTimePerMove(double step_time) = 0;
 
+	void GetTreeProperties(std::vector<Tree_Properties> & actionChildTreeProp){ ((POMCP *)solver_)->GetTreeProperties(actionChildTreeProp); }
+
 	double AverageUndiscountedRoundReward() const;
 	double StderrUndiscountedRoundReward() const;
 	double AverageDiscountedRoundReward() const;
@@ -137,9 +144,6 @@ public:
 
 	void AddDiscounted2String(std::string & buffer) const;//NATAN CHANGES
 	void AddUnDiscounted2String(std::string & buffer) const;
-
-	void ResizeTreeProp(int size) { tree_properties_.resize(size); }
-	void AvgTreeProp(int idx) {tree_properties_[idx].Avg();};
 
 	void PrintFinalResults(std::string &buffer) const;
 	void PrintTreeProp(std::string &buffer) const;

@@ -4,8 +4,6 @@
 
 #include "../nxnGrid.h"
 
-
-
 using namespace std;
 
 namespace despot 
@@ -134,6 +132,56 @@ ValuedAction POMCP::Search() {
 	return Search(Globals::config.time_per_move);
 }
 
+ValuedAction POMCP::Search(ThreadDataStruct * threadData)
+{
+	// main data mutex
+	std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
+	
+	if (root_ == NULL) 
+	{
+
+		State* state = belief_->Sample(1)[0];
+		root_ = CreateVNode(0, state, prior_, model_);
+		model_->Free(state);
+	}
+
+	int hist_size = history_.Size();
+	
+	bool notDone = true;
+
+
+	while (notDone)
+	{
+		vector<State*> particles = belief_->Sample(1000);
+		for (int i = 0; i < particles.size(); i++) 
+		{
+			State* particle = particles[i];
+
+			Simulate(particle, root_, model_, prior_);
+			history_.Truncate(hist_size);
+
+			std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
+			{
+				if (threadData->m_actionNeeded || threadData->m_terminal)
+				{
+					notDone = false;
+					break;
+				}
+			}
+		}
+
+		for (int i = 0; i < particles.size(); i++) 
+		{
+			model_->Free(particles[i]);
+		}
+	}
+
+	ValuedAction astar = OptimalAction(root_);
+	threadData->m_action = astar.action;
+
+	return astar;
+}
+
 void POMCP::belief(Belief* b) {
 	belief_ = b;
 	history_.Truncate(0);
@@ -232,30 +280,54 @@ void POMCP::SendTree(State * state)
 	nxnGrid::SendTree(state , root_);
 }
 
-void POMCP::GetTreeProperties(Tree_Properties & properties) const // NATAN CHANGES
+void POMCP::GetTreeProperties(std::vector<Tree_Properties> & childsProperties) const // NATAN CHANGES
 {
 	if (root_ == NULL)
+	{
+		for (int i = 0; i < childsProperties.size(); ++i)
+			childsProperties[i] = Tree_Properties();
 		return;
+	}
 
-	properties.m_height = root_->Height();
-	properties.m_size = root_->Size();
+	for (int i = 0; i < childsProperties.size(); ++i)
+	{
+		auto actionTree = root_->Child(i);
 
-	properties.m_levelSize.resize(properties.m_height - 1, 0);
-	root_->LevelSize(properties.m_levelSize, 0);
+		if (actionTree != nullptr)
+		{
+			childsProperties[i].m_nodeCount = actionTree->count();
+			childsProperties[i].m_nodeValue = actionTree->value();
+			childsProperties[i].m_size = actionTree->Size();
+		}
+		else
+		{
+			childsProperties[i].m_nodeCount = 0;
+			childsProperties[i].m_nodeValue = 0;
+			childsProperties[i].m_size = 0;
+		}
+	}
 
-	properties.m_levelActionSize.resize(model_->NumActions());
-	for (int i = 0; i < properties.m_levelActionSize.size(); ++i)
-		properties.m_levelActionSize[i].resize(properties.m_height - 1, 0);
-	root_->LevelActionSize(properties.m_levelActionSize, 0);
 
-	properties.m_preferredActionPortion.resize(properties.m_height, 0);
-	
-	// add slot for the leaf level
-	properties.m_levelSize.emplace_back(0);
-	root_->PreferredActionPortion(properties.m_preferredActionPortion, properties.m_levelSize, 0);
-	// pop leaf level
-	properties.m_levelSize.pop_back();
-	properties.m_preferredActionPortion.pop_back();
+
+	//properties.m_height = root_->Height();
+	//properties.m_size = root_->Size();
+
+	//properties.m_levelSize.resize(properties.m_height - 1, 0);
+	//root_->LevelSize(properties.m_levelSize, 0);
+
+	//properties.m_levelActionSize.resize(model_->NumActions());
+	//for (int i = 0; i < properties.m_levelActionSize.size(); ++i)
+	//	properties.m_levelActionSize[i].resize(properties.m_height - 1, 0);
+	//root_->LevelActionSize(properties.m_levelActionSize, 0);
+
+	//properties.m_preferredActionPortion.resize(properties.m_height, 0);
+	//
+	//// add slot for the leaf level
+	//properties.m_levelSize.emplace_back(0);
+	//root_->PreferredActionPortion(properties.m_preferredActionPortion, properties.m_levelSize, 0);
+	//// pop leaf level
+	//properties.m_levelSize.pop_back();
+	//properties.m_preferredActionPortion.pop_back();
 }
 
 void POMCP::SaveTreeInFile(std::ofstream & out) const // NATAN CHANGES
@@ -357,8 +429,11 @@ double POMCP::Simulate(State* particle, RandomStreams& streams, VNode* vnode,
 
 // static
 double POMCP::Simulate(State* particle, VNode* vnode, const DSPOMDP* model,
-	POMCPPrior* prior) {
+	POMCPPrior* prior) 
+{
+	
 	assert(vnode != NULL);
+	
 	if (vnode->depth() >= Globals::config.search_depth)
 		return 0;
 

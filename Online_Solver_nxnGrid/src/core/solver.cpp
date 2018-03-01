@@ -89,4 +89,10 @@ Belief* Solver::belief() {
 	return belief_;
 }
 
+ValuedAction Solver::Search(ThreadDataStruct * threadData)
+{
+	assert(1 != 1);
+	return ValuedAction();
+}
+
 } // namespace despot

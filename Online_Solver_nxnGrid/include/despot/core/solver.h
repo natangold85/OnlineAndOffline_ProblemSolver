@@ -4,11 +4,14 @@
 #include "../core/globals.h"
 #include "../core/history.h"
 
+#include "..\..\..\src\ThreadDataClass.h"
+
 namespace despot {
 
 class DSPOMDP;
 class Belief;
 struct ValuedAction;
+
 
 /* =============================================================================
  * SearchStatistics class
@@ -54,6 +57,7 @@ public:
 	 * value is not to be used.
 	 */
 	virtual ValuedAction Search() = 0;
+	virtual ValuedAction Search(ThreadDataStruct * threadData);
 
 	/**
 	 * Update current belief, history, and any other internal states that is
