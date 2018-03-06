@@ -83,11 +83,11 @@ vector<State*> Belief::Resample(int num, const vector<State*>& belief,
 	
 	auto modelCast = static_cast<const nxnGrid *>(model);
 	std::vector<std::vector<std::pair<int, double>>> objLocations(modelCast->CountMovingObjects());
-	std::vector<int> stateVec;
 	// to get num particles need to take from each observed object nth root of num particles
 	double numObjLocations = pow(num, 1.0 / (modelCast->CountMovingObjects() - 1));
 	// insert self location (is known)
-	objLocations[0].emplace_back(modelCast->GetObsLoc(history.LastObservation(), 0), 1.0);
+	
+	objLocations[0].emplace_back(DetailedState::GetObservedObjLocation(history.LastObservation(), 0), 1.0);
 	// run on each observable object and create individualy for each object belief state
 	for (int obj = 1; obj < modelCast->CountMovingObjects(); ++obj)
 	{
@@ -143,9 +143,9 @@ vector<State*> Belief::Resample(int num, const vector<State*>& belief,
 			// Add to obj available locations if survived
 			if (particle->IsAllocated()) 
 			{
-				nxnGridState::IdxToState(particle, stateVec);
 				count++;
-				objLocations[obj].emplace_back(stateVec[obj], wgt);
+				int objLoc = DetailedState::GetObjLocation(particle->state_id, obj);
+				objLocations[obj].emplace_back(objLoc, wgt);
 			}
 		}
 	}

@@ -159,7 +159,7 @@ void nxnGridOfflineLocalActions::AddActionsRec(intVec & state, intVec & shelters
 		// if the object is enemy add cases of when the enemy is dead
 		if (IsEnemy(currObj))
 		{
-			state[currObj] = m_gridSize * m_gridSize;
+			state[currObj] = Attack::DeadLoc(m_gridSize);
 			AddActionsRec(state, shelters, currObj + 1, buffer);
 		}
 	}
@@ -197,7 +197,7 @@ void nxnGridOfflineLocalActions::AddSingleMove(intVec & state, intVec & shelters
 	{
 		int newLoc = newLocation.GetIdx(m_gridSize);
 		std::map<int, double> possibleLocs;
-		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleLocs, newLoc);
+		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocs, newLoc);
 
 		intVec newState(state);
 		for (auto loc : possibleLocs)
@@ -223,7 +223,7 @@ void nxnGridOfflineLocalActions::AddAttack(intVec & state, intVec & shelters, st
 	// TODO : implement this for 2 enemies
 
 	// if enemy dead or not exist do nothing
-	if (m_enemyVec.size() == 0 || state[1] == m_gridSize * m_gridSize)
+	if (m_enemyVec.size() == 0 || Attack::IsDead(state[1], m_gridSize))
 	{
 		PositionSingleState(state, state, shelters, 1.0, action, buffer);
 		buffer += "\n";
@@ -238,7 +238,7 @@ void nxnGridOfflineLocalActions::AddAttack(intVec & state, intVec & shelters, st
 		std::vector<std::pair<intVec, double>> shootOutcomes;
 
 		// creating a vecotr of shoot outcomes
-		m_self.AttackOffline(state[0], state[1], state, shelters, m_gridSize, shootOutcomes);
+		m_self.GetAttack()->AttackOffline(state, 0, state[1], shelters, m_gridSize, shootOutcomes);
 
 		for (auto v : shootOutcomes)
 		{
@@ -261,7 +261,7 @@ void nxnGridOfflineLocalActions::AddAttack(intVec & state, intVec & shelters, st
 double nxnGridOfflineLocalActions::MoveToLocation(intVec & state, intVec & shelters, int location, std::string & action, std::string & buffer) const
 {
 	std::map<int, double> possibleLocs;
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleLocs, location);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocs, location);
 
 	intVec newState(state);
 	double pLoss = 0.0;

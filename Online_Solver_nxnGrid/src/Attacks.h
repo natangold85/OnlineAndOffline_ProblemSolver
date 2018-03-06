@@ -18,8 +18,13 @@ public:
 	explicit Attack() = default;
 	virtual ~Attack() = default;
 
-	virtual void AttackOnline(int attackerLoc, int targetLoc, intVec & state, intVec & shelterLoc, int gridSize, double random) const = 0;
-	virtual void AttackOffline(int attackerLoc, int targetLoc, intVec & state, intVec & shelterLoc, int gridSize, shootOutcomes & result) const = 0;
+	/// return non-observed location
+	static int DeadLoc(int gridSize) { return gridSize * gridSize; };
+	/// return true if location is non-observed location
+	static bool IsDead(int location, int gridSize) { return location == DeadLoc(gridSize); };
+
+	virtual void AttackOnline(intVec & objectsLoc, int attackerLoc, int targetIdx, const intVec & shelters, int gridSize, double random) const = 0;
+	virtual void AttackOffline(const intVec & objectsLoc, int attackerLoc, int targetIdx, const intVec & shelters, int gridSize, shootOutcomes & result) const = 0;
 	
 	virtual bool InRange(int location, int otheObjLocation, int gridSize) const = 0;
 	virtual double GetRange() const = 0;
@@ -34,8 +39,8 @@ public:
 	DirectAttack(double m_range, double pHit);
 	~DirectAttack() = default;
 
-	virtual void AttackOnline(int attackerLoc, int targetLoc, intVec & state, intVec & shelterLoc, int gridSize, double random) const override;
-	virtual void AttackOffline(int attackerLoc, int targetLoc, intVec & state, intVec & shelterLoc, int gridSize, shootOutcomes & result) const override;
+	virtual void AttackOnline(intVec & objectsLoc, int attackerIdx, int targetLoc, const intVec & shelters, int gridSize, double random) const override;
+	virtual void AttackOffline(const intVec & objectsLoc, int attackerIdx, int targetLoc, const intVec & shelters, int gridSize, shootOutcomes & result) const override;
 	
 	virtual bool InRange(int location, int otheObjLocation, int gridSize) const;
 	virtual double GetRange() const { return m_range; };
@@ -44,10 +49,12 @@ public:
 	virtual std::string String() const override;
 private:
 	// return result of attacks given attacker, target, locations and grid size
-	void CalcAttackResult(Coordinate & attacker, Coordinate & target, intVec state, intVec shelters, int gridSize, shootOutcomes & result) const;
+	void CalcAttackResult(const intVec & objectsLoc, int attackerIdx, int targetIdx, const intVec & shelters, int gridSize, intVec & potentialIdxHit) const;
 
-	static void CalcChanges(Coordinate obj1, Coordinate obj2, std::pair<double, double> & change);
-	double CalcDiversion(intVec & state, intVec & shelters, Coordinate & hit, int gridSize, Coordinate & prevShotLocation, shootOutcomes & result) const;
+	virtual float CalcAzimuthShoot(Coordinate & attacker, Coordinate & target) const;
+
+	//static void CalcChanges(Coordinate obj1, Coordinate obj2, std::pair<double, double> & change);
+	//double CalcDiversion(intVec & state, intVec & shelters, Coordinate & hit, int gridSize, Coordinate & prevShotLocation, shootOutcomes & result) const;
 
 	static bool InFrame(Coordinate point, int gridSize);
 	static bool SearchForShelter(intVec shelters, int location);

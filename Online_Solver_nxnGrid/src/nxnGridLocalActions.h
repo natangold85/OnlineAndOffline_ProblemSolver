@@ -10,6 +10,8 @@
 #include "Self_Obj.h"
 #include "Coordinate.h"
 
+#include "Move_Properties.h"
+
 namespace despot 
 {
 
@@ -21,8 +23,9 @@ namespace despot
 class nxnGridLocalActions : public nxnGrid
 {	
 public:
-	///	enum of all actions
-	enum ACTION { STAY, NORTH, SOUTH, EAST, WEST, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, NUM_BASIC_ACTIONS };
+	///	enum of all basic actions (direction of movement derived from move_properties)
+
+	enum ACTION { NUM_BASIC_ACTIONS = NUM_DIRECTIONS };
 
 	explicit nxnGridLocalActions(int gridSize, int traget, Self_Obj & self, std::vector<intVec> & objectsInitLoc);
 	~nxnGridLocalActions() = default;
@@ -35,9 +38,7 @@ public:
 	virtual int NumActions() const override;
 
 	/// return the min reward valued action (needed for the despot algorithm)
-	virtual ValuedAction GetMinRewardAction() const override { return ValuedAction(STAY, -10.0); }
-	virtual void PrintAction(int action, std::ostream& out = std::cout) const override;
-
+	virtual ValuedAction GetMinRewardAction() const override { return ValuedAction(NO_DIRECTION, REWARD_MIN); }
 
 private:
 	// add actions to specific enemy
@@ -46,13 +47,17 @@ private:
 
 	// ACTIONS FUNCTION:
 	/// make move and update state return true if the move is valid (regardless if the move was successful or not) 
-	bool MakeMove(intVec & state, double random, ACTION action) const;
+	bool MakeMove(DetailedState & state, double random, ACTION action) const;
 	/// make attack and update state
-	void Attack(intVec & state, int target, double random, double & reward) const;
+	void Attack(DetailedState & state, int target, double random, double & reward) const;
 
-	void MoveToLocation(intVec & state, int location, double random) const;
+	void MoveToLocation(DetailedState & state, int location, double random) const;
+
+	virtual int EnemyRelatedActionIdx(int action) const override;
 
 	virtual bool EnemyRelatedAction(int action) const override;
+
+	virtual bool LegalAction(const DetailedState & observedState, int action) const override;
 };
 
 } // end ns despot

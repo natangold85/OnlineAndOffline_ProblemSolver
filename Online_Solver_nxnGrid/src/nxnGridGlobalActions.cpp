@@ -10,17 +10,8 @@
 
 namespace despot 
 {
-/// changes surrounding a point
-static const int s_numMoves = 8;
-static const int s_lutDirections[s_numMoves][2] = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
 
-static bool s_IS_MOVE_FROM_ENEMY = true;
-/// string array for all actions (enum as idx)
-static std::vector<std::string> s_ACTION_STR;
-
-/// observation for loss and win (does not important)
-static int OB_LOSS = 0;
-static int OB_WIN = 0;
+bool nxnGridGlobalActions::s_isMoveFromEnemy = false;
 
 /* =============================================================================
 * inline Functions
@@ -60,17 +51,14 @@ nxnGridGlobalActions::nxnGridGlobalActions(int gridSize, int target, Self_Obj & 
 : nxnGrid(gridSize, target, self, objectsInitLoc)
 {
 	// init vector for string of actions
-	s_ACTION_STR.clear();
-	s_ACTION_STR.emplace_back("Move To Target");
-	s_numBasicActions = NumBasicActions();
-	s_numEnemyRelatedActions = 1 + isMoveFromEnemyExist;
-	s_IS_MOVE_FROM_ENEMY = isMoveFromEnemyExist;
+	s_actionsStr.clear();
+	s_actionsStr.emplace_back("Move To Target");
+	s_isMoveFromEnemy = isMoveFromEnemyExist;
 }
 
 bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, OBS_TYPE lastObs, double& reward, OBS_TYPE& obs) const
 {
-	intVec state;
-	nxnGridState::IdxToState(&s, state);
+	DetailedState state(s);
 
 	// drawing more random numbers for each variable
 	double randomSelfObservation = Random::RANDOM.NextDouble();
@@ -86,7 +74,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 	// run on all enemies and check if the robot was killed
 	for (int i = 0; i < m_enemyVec.size(); ++i)
 	{
-		if (state[i + 1] != m_gridSize * m_gridSize && CalcIfDead(i, state, randomEnemiesAttacks[i]))
+		if (!Attack::IsDead(state[i + 1], m_gridSize) && CalcIfKilledByEnemy(state, i, randomEnemiesAttacks[i]))
 		{
 			reward = REWARD_LOSS;
 			return true;
@@ -112,33 +100,29 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 	else // actions related to enemies
 	{
 		int enemyAction = (action - NumBasicActions()) % NumEnemyActions();
-		int enemyIdx = (action - NumBasicActions()) / NumEnemyActions();
-		++enemyIdx;
+		int enemyIdx = ((action - NumBasicActions()) / NumEnemyActions()) + 1;
 
-		intVec observedState;
-		nxnGridState::IdxToState(lastObs, observedState);
-		int obsEnemyLoc = observedState[enemyIdx];
+		int realEnemyLoc = state[enemyIdx];
+		int obsEnemyLoc = DetailedState::GetObservedObjLocation(lastObs, enemyIdx);
 
-		if (state[enemyIdx] == m_gridSize * m_gridSize | obsEnemyLoc == observedState[0])
-		{
+		// if enemy is dead or non observed move is illegal
+		if (Attack::IsDead(realEnemyLoc, m_gridSize) || Observation::IsNonObserved(obsEnemyLoc, m_gridSize))
 				reward += REWARD_ILLEGAL_MOVE;
-		}	
 		else if (enemyAction == ATTACK)
 		{
 			Attack(state, obsEnemyLoc, randomSelfAction, reward);
-			for (size_t i = 0; i < m_nonInvolvedVec.size(); ++i)
+			
+			if (state.IsNonInvDead(m_gridSize))
 			{
-				if (state[i + 1 + m_enemyVec.size()] == m_gridSize * m_gridSize)
-				{
-					reward = REWARD_KILL_NINV;
-					return true;
-				}
+				reward = REWARD_KILL_NINV;
+				return true;
 			}
-			reward += REWARD_KILL_ENEMY * (state[enemyIdx] == m_gridSize * m_gridSize);
+
+			// TODO : needs to reward also if non-targeted enemy is killed
+			reward += REWARD_KILL_ENEMY * Attack::IsDead(state[enemyIdx], m_gridSize);
 		}
 		else // action = movefromenemy
 			MoveFromEnemy(state, obsEnemyLoc, randomSelfAction, lastObs);
-
 	}
 
 	// set next position of the objects on grid
@@ -147,8 +131,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 	obs = FindObservation(state, randomSelfObservation);
 	
 	//update state
-	nxnGridState& stateClass = static_cast<nxnGridState&>(s);
-	stateClass.UpdateState(state);
+	s.state_id = state.GetStateId();
 	return false;
 }
 
@@ -159,7 +142,7 @@ int nxnGridGlobalActions::NumBasicActions() const
 
 int nxnGridGlobalActions::NumEnemyActions() const
 {
-	return 1 + s_IS_MOVE_FROM_ENEMY;
+	return 1 + s_isMoveFromEnemy;
 }
 
 int nxnGridGlobalActions::NumActions() const
@@ -174,36 +157,27 @@ ValuedAction nxnGridGlobalActions::GetMinRewardAction() const
 	return ValuedAction(rand() % NumActions(), -10.0);
 }
 
-
-
-void nxnGridGlobalActions::PrintAction(int action, std::ostream & out) const
-{
-	out << s_ACTION_STR[action] << std::endl;
-}
-
 void nxnGridGlobalActions::AddActionsToEnemy()
 {
 	int enemyNum = m_enemyVec.size();
-	s_ACTION_STR.push_back("Attack enemy #" + std::to_string(enemyNum));
-	if (s_IS_MOVE_FROM_ENEMY)
-		s_ACTION_STR.push_back("Move from enemy #" + std::to_string(enemyNum));
+	s_actionsStr.push_back("Attack enemy #" + std::to_string(enemyNum));
+	if (s_isMoveFromEnemy)
+		s_actionsStr.push_back("Move from enemy #" + std::to_string(enemyNum));
 }
 
 void nxnGridGlobalActions::AddActionsToShelter()
 {
-	// insert move to shelter after first action (move to target)
+	// insert single move to shelter after first action (move to target)
 	if (m_shelters.size() == 1)
-		s_ACTION_STR.insert(s_ACTION_STR.begin() + 1, "Move to shelter");
-
-	s_numBasicActions = NumBasicActions();
+		s_actionsStr.insert(s_actionsStr.begin() + 1, "Move to shelter");
 }
 
-void nxnGridGlobalActions::MoveToTarget(intVec & state, double random) const
+void nxnGridGlobalActions::MoveToTarget(DetailedState & state, double random) const
 {
 	MoveToLocation(state, m_targetIdx, random);
 }
 
-void nxnGridGlobalActions::MoveToShelter(intVec & state, double random) const
+void nxnGridGlobalActions::MoveToShelter(DetailedState & state, double random) const
 {
 	// go to the nearest shelter
 	int shelterLoc = NearestShelter(state[0]);
@@ -212,23 +186,20 @@ void nxnGridGlobalActions::MoveToShelter(intVec & state, double random) const
 		MoveToLocation(state, shelterLoc, random);
 }
 
-void nxnGridGlobalActions::Attack(intVec & state, int target, double random, double & reward) const
+void nxnGridGlobalActions::Attack(DetailedState & state, int target, double random, double & reward) const
 {
-
 	if (m_self.GetAttack()->InRange(state[0], target, m_gridSize))
 	{
-		intVec shelters(m_shelters.size());
-		for (size_t i = 0; i < m_shelters.size(); ++i)
-			shelters[i] = m_shelters[i].GetLocation().GetIdx(m_gridSize);
+		intVec shelters(GetSheltersVec());
 
-		m_self.AttackOnline(state[0], target, state, shelters, m_gridSize, random);
+		m_self.GetAttack()->AttackOnline(state.LocationVec(), 0, target, shelters, m_gridSize, random);
 		reward += REWARD_FIRE;
 	}
 	else
 		MoveToLocation(state, target, random);
 }
 
-void nxnGridGlobalActions::MoveFromEnemy(intVec & state, int obsEnemyLoc, double random, OBS_TYPE lastObs) const
+void nxnGridGlobalActions::MoveFromEnemy(DetailedState & state, int obsEnemyLoc, double random, OBS_TYPE lastObs) const
 {
 	Coordinate enemy(obsEnemyLoc % m_gridSize, obsEnemyLoc / m_gridSize);
 	int newLoc = MoveFromLocation(state, enemy);
@@ -237,7 +208,7 @@ void nxnGridGlobalActions::MoveFromEnemy(intVec & state, int obsEnemyLoc, double
 		return;
 
 	std::map<int, double> possibleLocations;
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleLocations, newLoc);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, newLoc);
 
 	int loc = -1;
 	for (auto v : possibleLocations)
@@ -251,16 +222,19 @@ void nxnGridGlobalActions::MoveFromEnemy(intVec & state, int obsEnemyLoc, double
 	state[0] = loc;
 }
 
-void nxnGridGlobalActions::MoveToLocation(intVec & state, int location, double random) const
+void nxnGridGlobalActions::MoveToLocation(DetailedState & state, int location, double random) const
 {
 	std::map<int, double> possibleLocations;
 
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleLocations, location);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, location);
 
 	int loc = -1;
 	for (auto v : possibleLocations)
 	{
 		loc = v.first;
+		if (loc > 99)
+			m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, location);
+
 		random -= v.second;
 		if (random <= 0.0)
 			break;
@@ -269,32 +243,26 @@ void nxnGridGlobalActions::MoveToLocation(intVec & state, int location, double r
 	state[0] = loc;
 }
 
-int nxnGridGlobalActions::MoveFromLocation(intVec & state, Coordinate & goFrom) const
+int nxnGridGlobalActions::MoveFromLocation(DetailedState & state, Coordinate & goFrom) const
 {
 	Coordinate self(state[0] % m_gridSize, state[0] / m_gridSize);
 
-	int maxLocation = state[0];
-	int maxDist = self.Distance(goFrom);
+	int maxLocation = -1;
+	int maxDist = INT_MIN;
 
 	// run on all possible move locations and find the farthest point from goFrom
-	for (size_t i = 0; i < s_numMoves; ++i)
+	for (auto loc : Move_Properties::s_directionsLUT)
 	{
-		Coordinate move(state[0] % m_gridSize, state[0] / m_gridSize);
-		move.X() += s_lutDirections[i][0];
-		move.Y() += s_lutDirections[i][1];
+		Coordinate move(self);
+		move += loc;
 
-		// if move is not on grid continue for next move
-		if (move.X() < 0 | move.X() >= m_gridSize | move.Y() < 0 | move.Y() >= m_gridSize)
-			continue;
-
-		// if move is valid calculate distance
-		int currLocation = move.X() + move.Y() * m_gridSize;
-		if (ValidLocation(state, currLocation))
+		// if move is on grid calculate distance
+		if (move.ValidLocation(m_gridSize))
 		{
 			int currDist = goFrom.Distance(move);
 			if (currDist > maxDist)
 			{
-				maxLocation = currLocation;
+				maxLocation = move.GetIdx(m_gridSize);
 				maxDist = currDist;
 			}
 		}
@@ -323,9 +291,29 @@ int nxnGridGlobalActions::NearestShelter(int loc) const
 	return nearestShelter;
 }
 
+int nxnGridGlobalActions::EnemyRelatedActionIdx(int action) const
+{
+	return ((action - NumBasicActions()) / NumEnemyActions());
+}
+
 bool nxnGridGlobalActions::EnemyRelatedAction(int action) const
 {
 	return action >= NumBasicActions();
+}
+
+bool nxnGridGlobalActions::LegalAction(const DetailedState & observedState, int action) const
+{	
+	bool legalAction = false;
+
+	// if not related to enemy idx will be negative
+	int enemyIdxAction = (action - NumBasicActions()) / NumEnemyActions();
+
+	if (enemyIdxAction < 0) 
+		legalAction = true;
+	else if (!Attack::IsDead(observedState[enemyIdxAction], m_gridSize) && !Observation::IsNonObserved(observedState[enemyIdxAction], m_gridSize))
+		legalAction = true;
+
+	return legalAction;
 }
 
 } //end ns despot

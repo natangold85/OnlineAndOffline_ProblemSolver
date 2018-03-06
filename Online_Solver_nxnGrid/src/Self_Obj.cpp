@@ -5,13 +5,3 @@ Self_Obj::Self_Obj(Coordinate& location, std::shared_ptr<Move_Properties> moveme
 , m_observation(observation)
 {
 }
-
-void Self_Obj::AttackOnline(int objLoc, int targetLoc, intVec & state, intVec & shelters, int gridSize, double random) const
-{
-	m_attack->AttackOnline(objLoc, targetLoc, state, shelters, gridSize, random);
-}
-
-void Self_Obj::AttackOffline(int objLoc, int targetLoc, intVec & state, intVec & shelters, int gridSize, Attack::shootOutcomes & result) const
-{
-	m_attack->AttackOffline(objLoc, targetLoc, state, shelters, gridSize, result);
-}

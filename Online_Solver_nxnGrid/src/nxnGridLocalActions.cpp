@@ -8,20 +8,6 @@
 namespace despot 
 {
 
-/// changes surrounding a point
-static const int s_numMoves = 8;
-static const int s_lutDirections[s_numMoves][2] = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
-
-/// string array for all actions (enum as idx)
-static std::vector<std::string> s_ACTION_STR(nxnGridLocalActions::NUM_BASIC_ACTIONS + 1);
-
-/// lut connecting coordinate change to move action
-static std::vector<Coordinate> s_ACTION_CHANGE(nxnGridLocalActions::NUM_BASIC_ACTIONS);
-
-/// observation for loss and win (does not important)
-static int OB_LOSS = 0;
-static int OB_WIN = 0;
-
 /* =============================================================================
 * inline Functions
 * =============================================================================*/
@@ -60,37 +46,12 @@ inline int Distance(int a, int b, int gridSize)
 nxnGridLocalActions::nxnGridLocalActions(int gridSize, int target, Self_Obj & self, std::vector<intVec> & objectsInitLoc)
 : nxnGrid(gridSize, target, self, objectsInitLoc)
 {
-	// init vector for string of actions
-	s_ACTION_STR[STAY] = "Stay";
-
-	s_ACTION_STR[NORTH] = "North";
-	s_ACTION_STR[SOUTH] = "South";
-	s_ACTION_STR[WEST] = "West";
-	s_ACTION_STR[EAST] = "East";
-
-	s_ACTION_STR[NORTH_WEST] = "North-West";
-	s_ACTION_STR[NORTH_EAST] = "North-East";
-	s_ACTION_STR[SOUTH_WEST] = "South-West";
-	s_ACTION_STR[SOUTH_EAST] = "South-East";
-
-	s_ACTION_CHANGE[NORTH] = Coordinate(0, -1);
-	s_ACTION_CHANGE[SOUTH] = Coordinate(0, 1);
-	s_ACTION_CHANGE[WEST] = Coordinate(-1, 0);
-	s_ACTION_CHANGE[EAST] = Coordinate(1, 0);
-
-	s_ACTION_CHANGE[NORTH_WEST] = Coordinate(-1, -1);
-	s_ACTION_CHANGE[NORTH_EAST] = Coordinate(1, -1);
-	s_ACTION_CHANGE[SOUTH_WEST] = Coordinate(-1, 1);
-	s_ACTION_CHANGE[SOUTH_EAST] = Coordinate(1, 1);
-
-	s_numBasicActions = NUM_BASIC_ACTIONS;
-	s_numEnemyRelatedActions = 1;
+	s_actionsStr = Move_Properties::s_directionNamesLUT;
 }
 
 bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYPE lastObs, double& reward, OBS_TYPE& obs) const
 {
-	intVec state;
-	nxnGridState::IdxToState(&s, state);
+	DetailedState state(s);
 	enum ACTION action = static_cast<enum ACTION>(a);
 
 	// drawing more random numbers for each variable
@@ -108,7 +69,7 @@ bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYP
 	// run on all enemies and check if the robot was killed
 	for (int i = 0; i < m_enemyVec.size(); ++i)
 	{
-		if (state[i + 1] != m_gridSize * m_gridSize && CalcIfDead(i, state, randomEnemiesAttacks[i]))
+		if (!Attack::IsDead(state[i + 1], m_gridSize) && CalcIfKilledByEnemy(state, i, randomEnemiesAttacks[i]))
 		{
 			reward = REWARD_LOSS;
 			return true;
@@ -123,47 +84,40 @@ bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYP
 	}
 
 	// run on actions
-	if (action > STAY)
+	if (action < NO_DIRECTION)	// action == move
 	{
-		if (action < NUM_BASIC_ACTIONS) // action == move
-		{
-			bool isValidMove = MakeMove(state, randomSelfAction, action);
-			reward += REWARD_ILLEGAL_MOVE * (!isValidMove);
-		}
-		else // action = attack
-		{
-			int enemyIdx = action - NUM_BASIC_ACTIONS;
+		bool isValidMove = MakeMove(state, randomSelfAction, action);
+		reward += REWARD_ILLEGAL_MOVE * (!isValidMove);
+	}
+	else if (action > NUM_BASIC_ACTIONS)// action = attack
+	{
+		int enemyIdx = action - NUM_BASIC_ACTIONS;
 
-			intVec observedState;
-			nxnGridState::IdxToState(lastObs, observedState);
-			int obsEnemyLoc = observedState[enemyIdx];
+		int realEnemyLoc = state[enemyIdx];
+		int obsEnemyLoc = DetailedState::GetObservedObjLocation(lastObs, enemyIdx);
+			
+		if (Attack::IsDead(realEnemyLoc, m_gridSize) || Observation::IsNonObserved(obsEnemyLoc, m_gridSize))
+			reward += REWARD_ILLEGAL_MOVE;
+		else
+		{
+			Attack(state, obsEnemyLoc, randomSelfAction, reward);
+			if (state.IsNonInvDead(m_gridSize))
+			{
+				reward = REWARD_KILL_NINV;
+				return true;
+			}
 
-			if (state[enemyIdx] == m_gridSize * m_gridSize | obsEnemyLoc == observedState[0])
-			{
-				reward += REWARD_ILLEGAL_MOVE;
-			}
-			else
-			{
-				Attack(state, obsEnemyLoc, randomSelfAction, reward);
-				for (size_t i = 0; i < m_nonInvolvedVec.size(); ++i)
-				{
-					if (state[i + 1 + m_enemyVec.size()] == m_gridSize * m_gridSize)
-					{
-						reward = REWARD_KILL_NINV;
-						return true;
-					}
-				}
-				reward += REWARD_KILL_ENEMY * (state[enemyIdx] == m_gridSize * m_gridSize);
-			}
+			reward += REWARD_KILL_ENEMY * Attack::IsDead(state[enemyIdx], m_gridSize);
 		}
 	}
+
 	// set next position of the objects on grid
 	SetNextPosition(state, randomObjectMoves);
 	// update observation
 	obs = FindObservation(state, randomSelfObservation);
 	//update state
-	nxnGridState& stateClass = static_cast<nxnGridState&>(s);
-	stateClass.UpdateState(state);
+	s.state_id = state.GetStateId();
+
 	return false;
 }
 
@@ -173,29 +127,24 @@ int nxnGridLocalActions::NumActions() const
 	return NUM_BASIC_ACTIONS + m_enemyVec.size();
 };
 
-void nxnGridLocalActions::PrintAction(int action, std::ostream & out) const
-{
-	out << s_ACTION_STR[action] << std::endl;
-}
-
 void nxnGridLocalActions::AddActionsToEnemy()
 {
-	s_ACTION_STR.push_back("Attack enemy #" + std::to_string(m_enemyVec.size()));
+	s_actionsStr.push_back("Attack enemy #" + std::to_string(m_enemyVec.size()));
 }
 
 void nxnGridLocalActions::AddActionsToShelter()
 {
 }
 
-bool nxnGridLocalActions::MakeMove(intVec & state, double random, ACTION action) const
+bool nxnGridLocalActions::MakeMove(DetailedState & state, double random, ACTION action) const
 {
 	Coordinate target(state[0] % m_gridSize, state[0] / m_gridSize);
-	target += s_ACTION_CHANGE[action];
+	target += Move_Properties::s_directionsLUT[action];
 
 	if (target.ValidLocation(m_gridSize))
 	{
 		std::map<int, double> possibleLocs;
-		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleLocs, target.GetIdx(m_gridSize));
+		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocs, target.GetIdx(m_gridSize));
 
 		int loc = -1;
 		for (auto v : possibleLocs)
@@ -211,25 +160,23 @@ bool nxnGridLocalActions::MakeMove(intVec & state, double random, ACTION action)
 
 	return false;
 }
-void nxnGridLocalActions::Attack(intVec & state, int target, double random, double & reward) const
+void nxnGridLocalActions::Attack(DetailedState & state, int target, double random, double & reward) const
 {
 	if (m_self.GetAttack()->InRange(state[0], target, m_gridSize))
 	{
-		intVec shelters(m_shelters.size());
-		for (size_t i = 0; i < m_shelters.size(); ++i)
-			shelters[i] = m_shelters[i].GetLocation().GetIdx(m_gridSize);
+		intVec shelters(GetSheltersVec());
 
-		m_self.AttackOnline(state[0], target, state, shelters, m_gridSize, random);
+		m_self.GetAttack()->AttackOnline(state.LocationVec(), state[0], target, shelters, m_gridSize, random);
 		reward += REWARD_FIRE;
 	}
 	else
 		MoveToLocation(state, target, random);
 }
 
-void nxnGridLocalActions::MoveToLocation(intVec & state, int location, double random) const
+void nxnGridLocalActions::MoveToLocation(DetailedState & state, int location, double random) const
 {
 	std::map<int, double> possibleLocations;
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleLocations, location);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, location);
 
 	int loc = -1;
 	for (auto v : possibleLocations)
@@ -243,10 +190,35 @@ void nxnGridLocalActions::MoveToLocation(intVec & state, int location, double ra
 	state[0] = loc;
 }
 
+int nxnGridLocalActions::EnemyRelatedActionIdx(int action) const
+{
+	return action - NUM_BASIC_ACTIONS;
+}
 
 bool nxnGridLocalActions::EnemyRelatedAction(int action) const
 {
 	return action >= NUM_BASIC_ACTIONS;
+}
+
+
+bool nxnGridLocalActions::LegalAction(const DetailedState & observedState, int action) const
+{
+	bool legalAction = false;
+
+	// if not related to enemy idx will be negative
+	int enemyIdxAction = action - NUM_BASIC_ACTIONS;
+
+	if (enemyIdxAction < 0)
+	{
+		Coordinate selfLoc(observedState[0] % m_gridSize, observedState[0] / m_gridSize);
+		selfLoc += Move_Properties::s_directionsLUT[action];
+		if (selfLoc.ValidLocation(m_gridSize))
+			legalAction = true;
+	}
+	if (!Attack::IsDead(observedState[enemyIdxAction], m_gridSize) && !Observation::IsNonObserved(observedState[enemyIdxAction], m_gridSize))
+		legalAction = true;
+
+	return action;
 }
 
 } //end ns despot

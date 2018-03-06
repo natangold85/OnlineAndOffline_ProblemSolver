@@ -193,9 +193,12 @@ void DetailedState::InitStatic()
 
 STATE_TYPE DetailedState::MaxState()
 {
-	int numStates = s_gridSize * s_gridSize + 1;
+	int numObjects = 1 + s_numEnemies + s_numNonInvolved;
+	int numBits = (s_NUM_BITS_LOCATION + s_NUM_BITS_DIRECTION) * numObjects;
+	
+	STATE_TYPE ret = 1;
 
-	return pow(numStates, 0);
+	return ret << numBits;
 }
 
 char DetailedState::ObjIdentity(const locationVec & locations, int location)

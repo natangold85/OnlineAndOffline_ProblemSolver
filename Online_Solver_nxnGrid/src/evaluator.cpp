@@ -154,8 +154,9 @@ bool Evaluator::RunStep(ThreadDataStruct * threadData, int step)
 	// build tree (exit when action is needed)
 	solver_->Search(threadData);
 
-	{	//  observation recieved
+	{	//  update flags to after action found
 		std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
+		threadData->m_observationRecieved = false;
 		threadData->m_actionNeeded = false;
 		threadData->m_actionRecieved = true;
 		terminal = threadData->m_terminal;
@@ -173,8 +174,7 @@ bool Evaluator::RunStep(ThreadDataStruct * threadData, int step)
 
 	{
 		std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
-
-		
+	
 		// update if not terminal
 		if (!terminal)
 			solver_->Update(threadData->m_action, threadData->m_lastObservation);
@@ -751,12 +751,12 @@ bool POMDPEvaluator::ExecuteAction(int action, double& reward, OBS_TYPE& obs)
 	// FRAGILE observation = state_id
 	OBS_TYPE lastObs = solver_->belief()->history_.Size() > 0 ? solver_->belief()->history_.LastObservation() : state_->state_id;
 	bool terminal;
-	if (nxnGrid::IsVBSEvaluator())
+	if (nxnGrid::IsExternalSimulator())
 	{
 		// send action to simulator
 		static_cast<nxnGrid *>(model_)->SendAction(action);
 		// read state and update reward and observation
-		terminal = static_cast<nxnGrid *>(model_)->RcvState(state_, action, lastObs, reward, obs);
+		terminal = static_cast<nxnGrid *>(model_)->RcvState(state_, lastObs, reward, obs);
 	}
 	else
 		terminal = model_->Step(*state_, random_num, action, lastObs, reward, obs);

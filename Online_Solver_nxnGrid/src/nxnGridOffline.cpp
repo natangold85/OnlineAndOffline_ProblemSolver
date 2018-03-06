@@ -163,7 +163,7 @@ void nxnGridOffline::FindStateCount(intVec & state, long & count, int currIdx) c
 
 		if (IsEnemy(currIdx) & count != 0)
 		{
-			state[currIdx] = m_gridSize * m_gridSize;
+			state[currIdx] = Attack::DeadLoc(m_gridSize);
 			FindStateCount(state, count, currIdx + 1);
 		}
 	}
@@ -247,7 +247,7 @@ void nxnGridOffline::CalcS_ORec(intVec& state, int currIdx, const char * type, s
 
 		if (IsEnemy(currIdx))
 		{
-			state[currIdx] = m_gridSize * m_gridSize;
+			state[currIdx] = Attack::DeadLoc(m_gridSize);
 			CalcS_ORec(state, currIdx + 1, type, buffer);
 		}
 
@@ -276,7 +276,7 @@ bool nxnGridOffline::NoRepetitionCheckAndCorrect(intVec& state, std::vector<intV
 	{
 		for (int j = 1; j < state.size(); ++j)
 		{
-			if (state[i] == state[j] && i != j && state[j] != m_gridSize * m_gridSize)
+			if (state[i] == state[j] && i != j && !Attack::IsDead(state[j], m_gridSize))
 			{
 				if (arrOfIdx[i - 1] == 0)
 				{
@@ -323,7 +323,7 @@ bool nxnGridOffline::NoRepeatsAll(intVec& state) const
 
 bool nxnGridOffline::NoRepeats(intVec& state, int idx) const
 {
-	if (state[idx] == m_gridSize * m_gridSize)
+	if (Attack::IsDead(state[idx], m_gridSize))
 	{
 		return true;
 	}
@@ -383,7 +383,7 @@ void nxnGridOffline::CalcStartStateRec(intVec& state, intVec& initState, int cur
 		// add the option of dead enemy if the object is enbemy
 		if (IsEnemy(currIdx))
 		{
-			state[currIdx] = m_gridSize * m_gridSize;
+			state[currIdx] = Attack::DeadLoc(m_gridSize);
 			CalcStartStateRec(state, initState, currIdx + 1, buffer);
 		}
 	}
@@ -405,7 +405,7 @@ void nxnGridOffline::AddTargetPositionRec(intVec & state, int currIdx, std::stri
 		}
 		if (IsEnemy(currIdx))
 		{
-			state[currIdx] = m_gridSize * m_gridSize;
+			state[currIdx] = Attack::DeadLoc(m_gridSize);
 			AddTargetPositionRec(state, currIdx + 1, buffer);
 		}
 	}
@@ -424,7 +424,7 @@ bool nxnGridOffline::IsNonInvDead(intVec & state) const
 
 	// searching for dead non-involved
 	for (size_t i = 0; i < m_nonInvolvedVec.size(); ++i)
-		isDead |= (state[i + 1 + m_enemyVec.size()] == m_gridSize * m_gridSize);
+		isDead |= Attack::IsDead(state[i + 1 + m_enemyVec.size()],m_gridSize);
 
 	return isDead;
 }
@@ -443,13 +443,13 @@ double nxnGridOffline::PositionSingleState(intVec & newState, intVec & currentSt
 	std::vector<double> individualProb2Kill;
 	for (int e = 0; e < m_enemyVec.size(); ++e)
 	{
-		if (currentState[e + 1] != m_gridSize * m_gridSize)
+		if (!Attack::IsDead(currentState[e + 1], m_gridSize))
 		{
 			Attack::shootOutcomes result;
-			m_enemyVec[e].GetAttack()->AttackOffline(currentState[e + 1], currentState[0], currentState, shelters, m_gridSize, result);
+			m_enemyVec[e].GetAttack()->AttackOffline(currentState, e + 1, 0, shelters, m_gridSize, result);
 			for (auto v : result)
 			{
-				if (v.first[0] == m_gridSize * m_gridSize)
+				if (Attack::IsDead(v.first[0], m_gridSize))
 					individualProb2Kill.emplace_back(v.second);
 			}
 		}
@@ -470,14 +470,14 @@ double nxnGridOffline::PositionSingleState(intVec & newState, intVec & currentSt
 	return pToDead;
 }
 
-void nxnGridOffline::AddStateToBuffer(std::string& buffer, pairMap & itr, int numLocations)
+void nxnGridOffline::AddStateToBuffer(std::string& buffer, pairMap & itr, int gridSize)
 {
 	buffer += std::to_string(itr.first[0]);
 
 	for (int i = 1; i < itr.first.size(); ++i)
 	{
 		// if object is dead insert dead to buffer
-		if (itr.first[i] == numLocations)
+		if (Attack::IsDead(itr.first[i], gridSize))
 		{
 			buffer += "xD";
 		}
@@ -500,7 +500,7 @@ std::string nxnGridOffline::GetStringState(intVec & state, const char *type) con
 
 	for (int i = 1; i < state.size(); ++i)
 	{
-		if (state[i] != m_gridSize * m_gridSize)
+		if (!Attack::IsDead(state[i], m_gridSize))
 		{
 			currentState += "x" + std::to_string(state[i]);
 		}
@@ -551,7 +551,7 @@ void nxnGridOffline::AddMoveStatesRec(intVec & state, double prob, int currIdx, 
 	else
 	{	
 		// if object is dead there is no move state possible
-		if (state[currIdx] == m_gridSize * m_gridSize)
+		if (Attack::IsDead(state[currIdx], m_gridSize))
 		{
 			AddMoveStatesRec(state, prob, currIdx + 1, prefix, buffer);
 			return;
@@ -560,9 +560,9 @@ void nxnGridOffline::AddMoveStatesRec(intVec & state, double prob, int currIdx, 
 		// get movement possibles
 		std::map<int, double> possibleLocs;
 		if (currIdx < m_enemyVec.size() + 1)
-			m_enemyVec[currIdx - 1].GetMovement()->GetPossibleMoves(state[currIdx], m_gridSize, state, possibleLocs, state[0]);
+			m_enemyVec[currIdx - 1].GetMovement()->GetPossibleMoves(state[currIdx], m_gridSize, possibleLocs, state[0]);
 		else if (currIdx < m_nonInvolvedVec.size() + m_enemyVec.size() + 1)
-			m_nonInvolvedVec[currIdx - 1 - m_enemyVec.size()].GetMovement()->GetPossibleMoves(state[currIdx], m_gridSize, state, possibleLocs, state[0]);
+			m_nonInvolvedVec[currIdx - 1 - m_enemyVec.size()].GetMovement()->GetPossibleMoves(state[currIdx], m_gridSize, possibleLocs, state[0]);
 		else
 			return;
 
@@ -675,7 +675,7 @@ void nxnGridOffline::CalcObsRec(intVec& state, int currIdx, std::string & buffer
 
 		if (IsEnemy(currIdx))
 		{
-			state[currIdx] = m_gridSize * m_gridSize;
+			state[currIdx] = Attack::DeadLoc(m_gridSize);
 			CalcObsRec(state, currIdx + 1, buffer);
 		}
 	}
@@ -692,9 +692,9 @@ void nxnGridOffline::CalcObsSingleState(intVec& state, std::string& buffer)
 	CalcObsMapRec(newState, state, pMap, 1.0, 1);
 
 	// add observations to buffer
-	int numStates = m_gridSize * m_gridSize;
-	std::for_each(pMap.begin(), pMap.end(), [&buffer, &prefix, numStates](pairMap itr)
-	{	buffer += prefix;	nxnGridOffline::AddStateToBuffer(buffer, itr, numStates); });
+	int gridSize = m_gridSize;
+	std::for_each(pMap.begin(), pMap.end(), [&buffer, &prefix, gridSize](pairMap itr)
+	{	buffer += prefix;	nxnGridOffline::AddStateToBuffer(buffer, itr, gridSize); });
 }
 
 void nxnGridOffline::CalcObsMapRec(intVec& observedState, intVec& state, mapProb& pMap, double pCurr, int currObj)
@@ -707,13 +707,12 @@ void nxnGridOffline::CalcObsMapRec(intVec& observedState, intVec& state, mapProb
 	}
 	else
 	{
-		intVec observableLocations;
-		m_self.GetObservation()->InitObsAvailableLocations(state[0], state[currObj], state, m_gridSize, observableLocations);
-		for (auto obsLoc : observableLocations)
+		Observation::observableLocations obsLocations;
+		m_self.GetObservation()->InitObsAvailableLocations(state[0], state[currObj], m_gridSize, obsLocations);
+		for (auto obsLoc : obsLocations)
 		{
-			observedState[currObj] = obsLoc;
-			double pObs = m_self.GetObservation()->GetProbObservation(state[0], state[currObj], m_gridSize, obsLoc);
-			CalcObsMapRec(observedState, state, pMap, pCurr * pObs, currObj + 1);
+			observedState[currObj] = obsLoc.first;
+			CalcObsMapRec(observedState, state, pMap, pCurr * obsLoc.second, currObj + 1);
 		}
 	}
 }
@@ -746,18 +745,6 @@ int nxnGridOffline::CountShelters() const
 int nxnGridOffline::GetGridSize() const
 {
 	return m_gridSize;
-}
-
-inline bool nxnGridOffline::AnyDead(intVec& state) const
-{
-	for (int i = 0; i < m_enemyVec.size(); ++i)
-	{
-		if (state[i + 1] == m_gridSize * m_gridSize)
-		{
-			return true;
-		}
-	}
-	return false;
 }
 
 // translate to string with higher precision

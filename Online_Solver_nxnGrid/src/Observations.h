@@ -7,19 +7,23 @@
 class Observation
 {
 public:
-	using intVec = std::vector<int>;
+	using locationProb = std::pair <int, double>;
+	using observableLocations = std::vector<locationProb>;
 
 	explicit Observation() = default;
 	virtual ~Observation() = default;
+
+	/// return non-observed location
+	static int NonObservedLoc(int gridSize) { return gridSize * gridSize + 1; };
+	/// return true if location is non-observed location
+	static bool IsNonObserved(int location, int gridSize) { return location == NonObservedLoc(gridSize); };
 
 	/// return true if observed location is in range of self object
 	virtual bool InRange(int selfLoc, int obsObjLoc, int gridSize) const = 0;
 	/// get probability for observation given observing object location(self loc), observed object location(objLoc) grid size and observation
 	virtual double GetProbObservation(int selfLoc, int objLoc, int gridSize, int observation) const = 0;
-	/// get observation given locations, grid size and random number
-	virtual int GetObservationObject(int selfLoc, int objLoc, int gridSize, double randomNum) const = 0;
 	/// initialize available locations of observation given locations and grid size
-	virtual void InitObsAvailableLocations(int selfLoc, int objLoc, const intVec & state, int gridSize, intVec & observableLocations) const = 0;
+	virtual void InitObsAvailableLocations(int selfLoc, int objLoc, int gridSize, observableLocations & observationLocs) const = 0;
 
 	virtual std::string String() const = 0;
 };
@@ -31,11 +35,13 @@ public:
 
 	virtual bool InRange(int selfLoc, int obsObjLoc, int gridSize) const;
 	virtual double GetProbObservation(int selfLoc, int objLoc, int gridSize, int observation) const override;
-	virtual int GetObservationObject(int selfLoc, int objLoc, int gridSize, double randomNum) const override;
-	virtual void InitObsAvailableLocations(int selfLoc, int objLoc, const intVec & state, int gridSize, intVec & observableLocations) const override;
+	virtual void InitObsAvailableLocations(int selfLoc, int objLoc, int gridSize, observableLocations & observationLocs) const override;
 
 	virtual std::string String() const override;
 private:
+	double GetProbSuccessfulObservation(int selfLoc, int objLoc, int gridSize) const;
+	double DeadSuccessfulObservation() const;
+
 	double m_distanceFactor;
 	double m_observationDivergence;
 	double m_nonObserved;

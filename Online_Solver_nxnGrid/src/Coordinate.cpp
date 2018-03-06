@@ -118,7 +118,7 @@ Coordinate Coordinate::operator-(Coordinate & toDecrease)
 Coordinate Coordinate::operator+(Coordinate & toIncrease)
 {
 	Coordinate ret(m_x, m_y);
-	return ret -= toIncrease;
+	return ret += toIncrease;
 }
 
 Coordinate Coordinate::operator/(double toDivide)

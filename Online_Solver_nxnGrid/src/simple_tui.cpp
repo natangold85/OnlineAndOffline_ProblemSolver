@@ -269,8 +269,7 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
     simulator->InitRound();
 	int i = 0;
 
-	bool runParallel = false;
-	if (runParallel)
+	if (nxnGrid::ParallelRun())
 		RunRound(simulator, model, round);
 	else
 	{	// original implementation
@@ -335,12 +334,13 @@ void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
 
 	std::thread treeBuilder(TreeBuilderThread, &dataForThread);
 	
+	std::vector<Tree_Properties> actionsTreeData(model->NumActions());
 	bool terminal = false;
 	
-	while (!terminal)
+	for (int step = 0; step < Globals::config.sim_len && !terminal; ++step)
 	{
 		double stepStart = get_time_second();
-		Sleep(1000);
+		Sleep(Globals::config.time_per_move * 1000);
 
 		double actionWanted = get_time_second();
 
@@ -349,7 +349,6 @@ void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
 			std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
 			dataForThread.m_actionNeeded = true;
 		}
-		std::cout << ".\n..\n...\naction needed!!\n\n\n";
 
 		// wait for action is ready
 		bool actionRecieved = false;
@@ -362,7 +361,6 @@ void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
 		double actionWantedMsgDelievered = get_time_second();
 		
 		int action = -1;
-		std::vector<Tree_Properties> actionsTreeData(model->NumActions());
 		double reward;
 		OBS_TYPE obs;
 		State currState;
@@ -375,6 +373,7 @@ void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
 			
 			terminal = evaluator->ExecuteAction(action, reward, obs);
 			currState.state_id = evaluator->currStateId();
+
 			evaluator->GetTreeProperties(actionsTreeData);
 
 			dataForThread.m_lastObservation = obs;
@@ -385,7 +384,7 @@ void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
 		
 		double actionCommited = get_time_second();
 
-		// prrint data
+		// print data
 		std::cout << "- Tree Properties: (size,count,value)\n";
 		for (auto actionProp : actionsTreeData)
 		{
@@ -400,9 +399,7 @@ void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
 		model->PrintObs(currState, obs);
 		std::cout << "- ObsProb = " << model->ObsProb(obs, currState, action) << "\n";
 
-		std::cout << "\n- StepReward = " << reward << "\n";
-		std::cout << "\n\n\n";
-
+		std::cout << "\n- StepReward = " << reward << "\n\n\n";
 	}
 
 	{ // inform to builder that round is over

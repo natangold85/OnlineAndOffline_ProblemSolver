@@ -63,48 +63,72 @@ DirectAttack::DirectAttack(double range, double pHit)
 {
 }
 
-void DirectAttack::AttackOnline(int attackerLoc, int targetLoc, intVec & state, intVec & shelterLoc, int gridSize, double random) const
+void DirectAttack::AttackOnline(intVec & objectsLoc, int attackerIdx, int targetLoc, const intVec & shelters, int gridSize, double random) const
 {
-	Coordinate attacker(attackerLoc % gridSize, attackerLoc / gridSize);
-	Coordinate target(targetLoc % gridSize, targetLoc / gridSize);
-	double dist = target.RealDistance(attacker);
+	// calculate attack result
+	intVec potentialHit;
+	CalcAttackResult(objectsLoc, attackerIdx, targetLoc, shelters, gridSize, potentialHit);
 
-	if (dist <= m_range & dist > 0)
+	// calculate result according to random
+	if (potentialHit.size() == 0)
+		return;
+	else if (potentialHit.size() == 1)
 	{
-		// calculate attack result
-		shootOutcomes result;
-		CalcAttackResult(attacker, target, state, shelterLoc, gridSize, result);
-		// run on result and return true if self object killed
-		for (auto v : result)
-		{
-			random -= v.second;
-			if (random <= 0.0)
-			{
-				state = v.first;
-				return;
-			}
-		}
+		if (random < m_pHit)
+			objectsLoc[potentialHit[0]] = DeadLoc(gridSize);
 	}
-	return;
+	else // hits atleast 2 obj
+	{
+		// TODO : implement 3 potential hits
+		double bothDead = m_pHit * m_pHit;
+		double singleDead = m_pHit * (1 - m_pHit);
+		if (random < bothDead)
+		{
+			objectsLoc[potentialHit[0]] = DeadLoc(gridSize);
+			objectsLoc[potentialHit[1]] = DeadLoc(gridSize);
+		}
+		else if (random < bothDead + singleDead)
+			objectsLoc[potentialHit[0]] = DeadLoc(gridSize);
+		else if (random < bothDead + singleDead * 2)
+			objectsLoc[potentialHit[1]] = DeadLoc(gridSize);
+	}
 }
 
-void DirectAttack::AttackOffline(int attackerLoc, int targetLoc, intVec & state, intVec & shelters, int gridSize, shootOutcomes & result) const
+void DirectAttack::AttackOffline(const intVec & objectsLoc, int attackerIdx, int targetLoc, const intVec & shelters, int gridSize, shootOutcomes & result) const
 {
-	Coordinate attacker(attackerLoc % gridSize, attackerLoc / gridSize);
-	Coordinate target(targetLoc % gridSize, targetLoc / gridSize);
-	// check outcomes for enemy as attacker, don't treat cases when enemy kill non involved
-	CalcAttackResult(attacker, target, state, shelters, gridSize, result);
-}
+	// calculate outcome of attack
+	intVec potentialHit;
+	CalcAttackResult(objectsLoc, attackerIdx, targetLoc, shelters, gridSize, potentialHit);
 
-//void DirectAttack::CalcSelfAttackOffline(intVec & state, intVec & shelters, int gridSize, shootOutcomes & result) const
-//{
-//	// TODO: make self attack also directed to observation
-//	// the attack is allways directed to enemy (location 1)
-//	intVec fightingObj{ state[0], state[1] };
-//	CalcAttackResult(state, shelters, fightingObj, gridSize, result);
-//
-//	return;
-//}
+	if (potentialHit.size() == 0)
+		result.emplace_back(objectsLoc, 1);
+	else if (potentialHit.size() == 1)
+	{
+		result.emplace_back(objectsLoc, 1 - m_pHit);
+		
+		intVec locWithDead(objectsLoc);
+		locWithDead[potentialHit[0]] = DeadLoc(gridSize);
+		
+		result.emplace_back(locWithDead, m_pHit);
+	}
+	else // TODO calculate more than two hits possible in one location
+	{
+		// insert prob of 4 options of hitting 2 objects
+		double miss = 1 - m_pHit;
+
+		result.emplace_back(objectsLoc, miss * miss);
+		
+		intVec deadLoc(objectsLoc);
+		deadLoc[potentialHit[0]] = DeadLoc(gridSize);
+		result.emplace_back(deadLoc, miss * m_pHit);
+		
+		deadLoc[potentialHit[1]] = DeadLoc(gridSize);
+		result.emplace_back(deadLoc, m_pHit * m_pHit);
+		
+		deadLoc[potentialHit[0]] = objectsLoc[potentialHit[0]];
+		result.emplace_back(deadLoc, miss * m_pHit);
+	}
+}
 
 bool DirectAttack::InRange(int location, int otherObjLocation, int gridSize) const
 {
@@ -121,141 +145,57 @@ std::string DirectAttack::String() const
 	return ret;
 }
 
-void DirectAttack::CalcAttackResult(Coordinate & attacker, Coordinate & target, intVec state, intVec shelters, int gridSize, shootOutcomes & result) const
+void DirectAttack::CalcAttackResult(const intVec & objectsLoc, int attackerIdx, int targetLoc, const intVec & shelters, int gridSize, intVec & potentialIdxHit) const
 {
-	std::pair<double, double> change;
-	CalcChanges(attacker, target, change);
+	Coordinate attacker(objectsLoc[attackerIdx] % gridSize, objectsLoc[attackerIdx] / gridSize);
+	Coordinate target(targetLoc % gridSize, targetLoc / gridSize);
 
-	std::pair<double, double> selfLocation(attacker.X(), attacker.Y());
-	std::pair<double, double> currLocation(attacker.X(), attacker.Y());
-	Coordinate prevLocation(attacker);
-	Coordinate location;
+	float azimuth = CalcAzimuthShoot(attacker, target);
+	float cosAzimuth = cos(azimuth);
+	float sinAzimuth = sin(azimuth);
 
-	while (prevLocation != target)
+	std::pair<double, double> currFireLocation(attacker.X(), attacker.Y());
+	Coordinate fireRoundedLocation(attacker);
+	int idxLocation = fireRoundedLocation.GetIdx(gridSize);
+
+	bool isHit = false;
+	while (!isHit)
 	{
-		prevLocation = currLocation;
-		currLocation += change;
-		location = currLocation;
-
-
-		int idxLocation = currLocation.first + currLocation.second * gridSize;
-
-		for (auto v : shelters)
+		// run on all objects and see if one of the object is on the path of fire
+		for (int i = 0; i < objectsLoc.size(); ++i)
 		{
-			if (idxLocation == v)
+			if (idxLocation == objectsLoc[i] && i != attackerIdx)
 			{
-				double pLeft = CalcDiversion(state, shelters, location, gridSize, prevLocation, result);
-				result.emplace_back(std::make_pair(state, m_pHit + pLeft));
-				return;
+				potentialIdxHit.emplace_back(i);
+				isHit = true;
 			}
 		}
 
-		for (auto v = state.begin(); v != state.end(); ++v)
-		{
-			if (idxLocation == *v)
-			{
-				double pLeft = CalcDiversion(state, shelters, location, gridSize, prevLocation, result);
-				result.emplace_back(std::make_pair(state, pLeft));
-				*v = gridSize * gridSize;
-				result.emplace_back(std::make_pair(state, m_pHit));
-				return;
-			}
-		}
+		currFireLocation.first += cosAzimuth;
+		currFireLocation.second += sinAzimuth;
 
-		if (Distance(selfLocation, currLocation + change) > m_range)
-		{
-			double pLeft = CalcDiversion(state, shelters, location, gridSize, prevLocation, result);
-			result.emplace_back(std::make_pair(state, m_pHit + pLeft));
+		fireRoundedLocation.X() = round(currFireLocation.first);
+		fireRoundedLocation.Y() = round(currFireLocation.second);
+		// if arrived to the limits of map attack failed
+		if (!fireRoundedLocation.ValidLocation(gridSize) || attacker.RealDistance(fireRoundedLocation) > m_range)
 			return;
-		}
 
-	}
-}
-
-void DirectAttack::CalcChanges(Coordinate obj1, Coordinate obj2, std::pair<double, double> & change)
-{
-	if (obj1.X() == obj2.X())
-	{
-		change.first = 0.0;
-		change.second = (obj2.Y() >= obj1.Y()) - (obj2.Y() < obj1.Y());
-			
-	}
-	else if (obj1.Y() == obj2.Y())
-	{
-		change.first = (obj2.X() >= obj1.X()) - (obj2.X() < obj1.X());
-		change.second = 0.0;
-	}
-	else
-	{
-		Coordinate diff = obj2 - obj1;
-		Coordinate absDiff = Abs(diff);
-		Coordinate direction = Sign(diff);
-		if (absDiff.X() > absDiff.Y())
+		idxLocation = fireRoundedLocation.GetIdx(gridSize);
+		// if arrived to shelter, shelter absorbed the bullet and attack failed (until entered option for more complex shelters) (because current location is not protected by shelter calculate shelter location at the end of loop just after change in idx)
+		for (auto s : shelters)
 		{
-			change.second = direction.Y();
-			change.first = direction.X() * static_cast<double>(absDiff.X()) / absDiff.X();
-		}
-		else
-		{
-			change.first = direction.X();
-			change.second = direction.Y() * static_cast<double>(absDiff.Y()) / absDiff.Y();
+			if (idxLocation == s)
+				return;
 		}
 	}
 }
 
-double DirectAttack::CalcDiversion(intVec & state, intVec & shelters, Coordinate & hit, int gridSize, Coordinate &  prevShotLocation, shootOutcomes & result) const
+float DirectAttack::CalcAzimuthShoot(Coordinate & attacker, Coordinate & target) const
 {
-	Coordinate sides[4];
-	for (size_t i = 0; i < 4; ++i)
-		sides[i] = hit;
+	Coordinate attackVector(target - attacker);
 
-	++sides[0].X();
-	--sides[1].X();
-	++sides[2].Y();
-	--sides[3].Y();
-
-	std::vector<std::pair<double, int>> dist;
-	for (size_t i = 0; i < 4; ++i)
-	{
-		if (sides[i] != prevShotLocation)
-			dist.emplace_back(std::make_pair(sides[i].RealDistance(prevShotLocation), i));
-	}
-
-	std::sort(dist.begin(), dist.end());
-
-	double outOfFrame = 0.0;
-	for (size_t i = 0; i < NUM_DIVERSIONS; ++i)
-	{
-		intVec newState(state);
-		double pDiverge = (1 - m_pHit) / NUM_DIVERSIONS;
-		if ( InFrame(sides[dist[i].second], gridSize) )
-		{
-			int divLocation = sides[dist[i].second].X() + sides[dist[i].second].Y() * gridSize;
-			auto v = newState.begin();
-			for (; v != newState.end() ; ++v)
-			{
-				if (divLocation == *v)
-				{
-					if (!SearchForShelter(shelters, divLocation))
-					{
-						*v = gridSize * gridSize;
-						result.emplace_back(std::make_pair(newState, pDiverge));
-					}
-					else
-					{
-						outOfFrame += pDiverge;
-					}
-					break;
-				}
-			}
-			if (v == newState.end())
-				outOfFrame += pDiverge;
-		}
-		else
-			outOfFrame += pDiverge;
-	}
-
-	return outOfFrame;
+	float desiredRadian = atan2(attackVector.Y(), attackVector.X());
+	return desiredRadian;
 }
 
 bool DirectAttack::InFrame(Coordinate point, int gridSize)

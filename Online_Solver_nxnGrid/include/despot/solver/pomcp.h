@@ -101,7 +101,11 @@ public:
 	POMCP(const DSPOMDP* model, POMCPPrior* prior, Belief* belief = NULL);
 	virtual ValuedAction Search();
 	virtual ValuedAction Search(double timeout);
+	
 	virtual ValuedAction Search(ThreadDataStruct * threadData) override;
+	
+	void TreeDevelopThread(TreeThreadDataStruct * treeThreadData);
+
 
 	void reuse(bool r);
 	virtual void belief(Belief* b);

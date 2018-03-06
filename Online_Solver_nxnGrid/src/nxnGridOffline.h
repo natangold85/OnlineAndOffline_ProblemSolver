@@ -204,9 +204,6 @@ private:
 	bool NoRepetitionCheckAndCorrect(intVec& state, std::vector<intVec> & moveStates, intVec & arrOfIdx) const;
 	/// return true if there is no repetitions in all state
 	bool NoRepeatsAll(intVec& state) const;
-
-	/// return true if there is any deads in state
-	bool AnyDead(intVec& state) const;
 };
 
 # endif //NXNGRIDOFFLINE_H

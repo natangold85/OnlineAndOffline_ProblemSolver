@@ -3,6 +3,7 @@
 #include "../../include/despot/core/pomdp.h"
 
 #include "../nxnGrid.h"
+#include "../nxnGridGlobalActions.h"
 
 using namespace std;
 
@@ -74,6 +75,7 @@ void POMCP::reuse(bool r) {
 ValuedAction POMCP::Search(double timeout) {
 	double start_cpu = clock(), start_real = get_time_second();
 
+	double searchStart = get_time_second();
 	if (root_ == NULL) {
 		State* state = belief_->Sample(1)[0];
 		root_ = CreateVNode(0, state, prior_, model_);
@@ -125,6 +127,7 @@ ValuedAction POMCP::Search(double timeout) {
 	}
 
 	// delete root_;
+
 	return astar;
 }
 
@@ -132,11 +135,88 @@ ValuedAction POMCP::Search() {
 	return Search(Globals::config.time_per_move);
 }
 
+
+void POMCP::TreeDevelopThread(TreeThreadDataStruct * treeThreadData)
+{
+	bool notDone = true;
+
+	//while (notDone)
+	//{
+	//	vector<State*> particles = belief_->Sample(1000);
+	//	for (int i = 0; i < particles.size(); i++)
+	//	{
+	//		State* particle = particles[i];
+
+	//		// before simulating need to do step with qnode
+
+	//		Simulate(particle, root_, model_, prior_);
+	//		history_.Truncate(treeThreadData->m_histSize);
+
+	//		std::lock_guard<std::mutex> lock(treeThreadData->m_flagsMutex);
+	//		{
+	//			if (treeThreadData->m_terminal)
+	//			{
+	//				notDone = false;
+	//				break;
+	//			}
+	//		}
+	//	}
+
+	//	for (int i = 0; i < particles.size(); i++)
+	//	{
+	//		model_->Free(particles[i]);
+	//	}
+	//}
+}
+
+//ValuedAction POMCP::Search(ThreadDataStruct * threadData)
+//{
+//	// main data mutex
+//	std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
+//
+//	double searchStart = get_time_second();
+//
+//	if (root_ == NULL)
+//	{
+//		State* state = belief_->Sample(1)[0];
+//		root_ = CreateVNode(0, state, prior_, model_);
+//		model_->Free(state);
+//	}
+//
+//	int hist_size = history_.Size();
+//
+//	std::vector<TreeThreadDataStruct> firstChilds(model_->NumActions());
+//	std::vector<std::thread> firstChildsthreads;
+//
+//	auto threadFunc = std::bind(TreeDevelopThread, this);
+//	for (int a = 0; a < model_->NumActions(); ++a)
+//	{
+//		firstChilds[a].m_histSize = hist_size;
+//		firstChilds[a].m_terminal = false;
+//		const nxnGridGlobalActions model(*reinterpret_cast<const nxnGridGlobalActions *>(model_));
+//		std::thread thread(threadFunc, &firstChilds[a]);
+//		firstChildsthreads.emplace_back(std::move(thread));
+//	}
+//
+//	bool notDone = true;
+//
+//	while (notDone)
+//	{
+//
+//	}
+//
+//	ValuedAction astar = OptimalAction(root_);
+//	threadData->m_action = astar.action;
+//
+//	return astar;
+//}
 ValuedAction POMCP::Search(ThreadDataStruct * threadData)
 {
 	// main data mutex
 	std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
 	
+	double searchStart = get_time_second();
+
 	if (root_ == NULL) 
 	{
 
@@ -192,7 +272,6 @@ void POMCP::belief(Belief* b) {
 
 void POMCP::Update(int action, OBS_TYPE obs) {
 	double start = get_time_second();
-
 	if (reuse_) {
 		VNode* node = root_->Child(action)->Child(obs);
 		root_->Child(action)->children().erase(obs);
@@ -306,28 +385,6 @@ void POMCP::GetTreeProperties(std::vector<Tree_Properties> & childsProperties) c
 			childsProperties[i].m_size = 0;
 		}
 	}
-
-
-
-	//properties.m_height = root_->Height();
-	//properties.m_size = root_->Size();
-
-	//properties.m_levelSize.resize(properties.m_height - 1, 0);
-	//root_->LevelSize(properties.m_levelSize, 0);
-
-	//properties.m_levelActionSize.resize(model_->NumActions());
-	//for (int i = 0; i < properties.m_levelActionSize.size(); ++i)
-	//	properties.m_levelActionSize[i].resize(properties.m_height - 1, 0);
-	//root_->LevelActionSize(properties.m_levelActionSize, 0);
-
-	//properties.m_preferredActionPortion.resize(properties.m_height, 0);
-	//
-	//// add slot for the leaf level
-	//properties.m_levelSize.emplace_back(0);
-	//root_->PreferredActionPortion(properties.m_preferredActionPortion, properties.m_levelSize, 0);
-	//// pop leaf level
-	//properties.m_levelSize.pop_back();
-	//properties.m_preferredActionPortion.pop_back();
 }
 
 void POMCP::SaveTreeInFile(std::ofstream & out) const // NATAN CHANGES

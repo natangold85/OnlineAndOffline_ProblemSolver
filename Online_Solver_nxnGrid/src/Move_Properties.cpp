@@ -1,5 +1,6 @@
 #include "Move_Properties.h"
 
+
 inline int Abs(int a)
 {
 	return a * (a >= 0) - a * (a < 0);
@@ -13,35 +14,79 @@ static int Distance(int loc1, int loc2, int gridSize)
 	return xDiff * xDiff + yDiff * yDiff;
 }
 
-std::vector<Coordinate> InitAvailableMovesLUT()
+
+std::vector<Coordinate> Move_Properties::s_directionsLUT(InitDirectionsLUT());
+std::vector<std::string> Move_Properties::s_directionNamesLUT(InitDirectionsNamesLUT());
+
+//for lut init
+std::vector<Coordinate> Move_Properties::InitDirectionsLUT()
 {
-	return std::vector<Coordinate> { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1} };
+	std::vector<Coordinate> lut(NUM_DIRECTIONS);
+
+	lut[SOUTH].X() = 0;
+	lut[SOUTH].Y() = 1;
+
+	lut[NORTH].X() = 0;
+	lut[NORTH].Y() = -1;
+
+	lut[EAST].X() = 1;
+	lut[EAST].Y() = 0;
+
+	lut[WEST].X() = -1;
+	lut[WEST].Y() = 0;
+
+	lut[SOUTH_EAST].X() = 1;
+	lut[SOUTH_EAST].Y() = 1;
+
+	lut[NORTH_EAST].X() = 1;
+	lut[NORTH_EAST].Y() = -1;
+
+	lut[SOUTH_WEST].X() = -1;
+	lut[SOUTH_WEST].Y() = 1;
+
+	lut[NORTH_WEST].X() = -1;
+	lut[NORTH_WEST].Y() = -1;
+
+	lut[NO_DIRECTION].X() = 0;
+	lut[NO_DIRECTION].Y() = 0;
+
+	return lut;
 }
 
-std::vector<Coordinate> Move_Properties::s_availableMovesLUT(InitAvailableMovesLUT());
-
-bool Move_Properties::NoBlockingLocation(const intVec & blockingObjLocations, int move)
+std::vector<std::string> Move_Properties::InitDirectionsNamesLUT()
 {
-	int l = 0;
-	for (; l < blockingObjLocations.size() - 1 & blockingObjLocations[l] != move; ++l);
+	std::vector<std::string> names(NUM_DIRECTIONS);
+	names[SOUTH] = "South";
+	names[NORTH] = "North";
+	names[EAST] = "East";
+	names[WEST] = "West";
 
-	return !(blockingObjLocations[l] == move);
+	names[SOUTH_EAST] = "South_East";
+	names[NORTH_EAST] = "North_East";
+	names[SOUTH_WEST] = "South_West";
+	names[NORTH_WEST] = "North_West";
+	names[NO_DIRECTION] = "No_Direction";
+
+	return names;
 }
-void Move_Properties::GetRandomMoves(intVec & randomMoves, const intVec & blockingObjLocations, int objLocation, int gridSize)
+
+
+void Move_Properties::GetRandomMoves(intVec & randomMoves, int objLocation, int gridSize)
 {
 	Coordinate loc(objLocation % gridSize, objLocation / gridSize);
-	for (auto change : s_availableMovesLUT)
+	for (auto change : s_directionsLUT)
 	{
 		change += loc;
 		int changeLocation = change.GetIdx(gridSize);
-		if (change.ValidLocation(gridSize) & NoBlockingLocation(blockingObjLocations, changeLocation))
+		if (change.ValidLocation(gridSize))
 			randomMoves.emplace_back(changeLocation);
 	}
 
 }
 
-int Move_Properties::MoveToTarget(int location, int target, int gridSize, intVec & blockingObjLocations)
+int Move_Properties::MoveToTarget(int location, int target, int gridSize)
 {
+	// assumption : target and location is inside grid and grid is square so move to target will allways be in grid
 	int xDiff = target % gridSize - location % gridSize;
 	int yDiff = target / gridSize - location / gridSize;
 
@@ -50,41 +95,16 @@ int Move_Properties::MoveToTarget(int location, int target, int gridSize, intVec
 
 	int bestMove = location + changeToInsertX + changeToInsertY;
 
-	// if the best move is valid return it else if there is only one direction to advance return -1
-	if (NoBlockingLocation(blockingObjLocations, bestMove))
-		return bestMove;
-	else if (changeToInsertX == 0 | changeToInsertY == 0)
-		return -1;
-
-	// try move to in the axis in which we are farther than goTo
-	int secondMove;
-	if (Distance(target, location + changeToInsertX, gridSize) < Distance(target, location + changeToInsertY, gridSize))
-	{
-		bestMove = location + changeToInsertX;
-		secondMove = location + changeToInsertY;
-	}
-	else
-	{
-		secondMove = location + changeToInsertX;
-		bestMove = location + changeToInsertY;
-	}
-
-	if (NoBlockingLocation(blockingObjLocations, bestMove))
-		return bestMove;
-
-	if (NoBlockingLocation(blockingObjLocations, secondMove))
-		return secondMove;
-
-	return -1;
+	return bestMove;
 }
 
 SimpleMoveProperties::SimpleMoveProperties(double pSuccess)
 : m_pSuccess(pSuccess)
 {}
 
-void SimpleMoveProperties::GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const
+void SimpleMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
 {	
-	int targetMove = MoveToTarget(location, target, gridSize, blockingObjLocs);
+	int targetMove = MoveToTarget(location, target, gridSize);
 
 	if (targetMove >= 0)
 	{
@@ -108,9 +128,9 @@ GeneralDirectionMoveProperties::GeneralDirectionMoveProperties(double pSuccess, 
 , m_pDirectDiagonalSuccess(pDirectDiagonalSuccess)
 {}
 
-void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const
+void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
 {
-	int targetMove = MoveToTarget(location, target, gridSize, blockingObjLocs);
+	int targetMove = MoveToTarget(location, target, gridSize);
 
 	if (targetMove >= 0)
 	{
@@ -132,11 +152,11 @@ void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize
 				Coordinate changes(target);
 				
 				changes.Y() += 1;
-				if (changes.ValidLocation(gridSize) && NoBlockingLocation(blockingObjLocs, changes.GetIdx(gridSize)))
+				if (changes.ValidLocation(gridSize))
 					diagonalFirst = changes.GetIdx(gridSize);
 				
 				changes.Y() -= 2;
-				if (changes.ValidLocation(gridSize) && NoBlockingLocation(blockingObjLocs, changes.GetIdx(gridSize)))
+				if (changes.ValidLocation(gridSize))
 					diagonalSecond = changes.GetIdx(gridSize);
 
 			}
@@ -146,11 +166,11 @@ void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize
 				Coordinate changes(target);
 
 				changes.X() += 1;
-				if (changes.ValidLocation(gridSize) && NoBlockingLocation(blockingObjLocs, changes.GetIdx(gridSize)))
+				if (changes.ValidLocation(gridSize))
 					diagonalFirst = changes.GetIdx(gridSize);
 
 				changes.X() -= 2;
-				if (changes.ValidLocation(gridSize) && NoBlockingLocation(blockingObjLocs, changes.GetIdx(gridSize)))
+				if (changes.ValidLocation(gridSize))
 					diagonalSecond = changes.GetIdx(gridSize);
 
 			}
@@ -164,12 +184,6 @@ void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize
 		{ // diagonal move
 			int straightX = target.X() + objLoc.Y() * gridSize;
 			int straightY = objLoc.X() + target.Y() * gridSize;
-
-			if (!NoBlockingLocation(blockingObjLocs, straightX))
-				straightX = location;
-
-			if (!NoBlockingLocation(blockingObjLocs, straightY))
-				straightY = location;
 
 			double pGeneralDirection = m_pSuccess - m_pDirectDiagonalSuccess;
 
@@ -196,15 +210,10 @@ LowLevelMoveProperties::LowLevelMoveProperties(double pSuccess)
 : m_pSuccess(pSuccess)
 {}
 
-void LowLevelMoveProperties::GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const
+void LowLevelMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
 {
-	if (NoBlockingLocation(blockingObjLocs, target))
-	{
-		possibleLocations[target] = m_pSuccess;
-		possibleLocations[location] = 1 - m_pSuccess;
-	}
-	else
-		possibleLocations[location] = 1;
+	possibleLocations[target] = m_pSuccess;
+	possibleLocations[location] = 1 - m_pSuccess;
 }
 
 std::string LowLevelMoveProperties::String() const
@@ -229,11 +238,10 @@ TargetDerivedMoveProperties::TargetDerivedMoveProperties(double stay, double tow
 {
 }
 
-void TargetDerivedMoveProperties::GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const
+void TargetDerivedMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
 {
-	int blockingObjSize = blockingObjLocs.size();
 	double pStay = m_pStay;
-	int targetMove = MoveToTarget(location, target, gridSize, blockingObjLocs);
+	int targetMove = MoveToTarget(location, target, gridSize);
 
 	// if move is possible insert it to result and consider it as blocking location else add its prob to stay
 	if (targetMove >= 0)
@@ -247,14 +255,13 @@ void TargetDerivedMoveProperties::GetPossibleMoves(int location, int gridSize, i
 		return;
 
 	intVec randomMoves;
-	GetRandomMoves(randomMoves, blockingObjLocs, location, gridSize);
+	GetRandomMoves(randomMoves, location, gridSize);
 
 	double pForEach = m_pRandomMove / randomMoves.size();
 	for (auto move : randomMoves)
 		possibleLocations[move] += pForEach;
 
 	// return blocking objects to its regular size
-	blockingObjLocs.resize(blockingObjSize);
 }
 
 std::string TargetDerivedMoveProperties::String() const
@@ -270,12 +277,12 @@ NaiveMoveProperties::NaiveMoveProperties(double stay)
 , m_pStay(stay)
 {}
 
-void NaiveMoveProperties::GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const
+void NaiveMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
 {
 	possibleLocations[location] = m_pStay;
 
 	intVec randomMoves;
-	GetRandomMoves(randomMoves, blockingObjLocs, location, gridSize);
+	GetRandomMoves(randomMoves, location, gridSize);
 
 	double pForEach = m_pRandomMove / randomMoves.size();
 	for (auto move : randomMoves)

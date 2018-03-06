@@ -33,11 +33,14 @@ static std::vector<nxnGrid::CALCULATION_TYPE> s_CALCTYPE{ nxnGrid::CALCULATION_T
 // parameters of model:
 static MODELS_AVAILABLE s_ACTIONS_TYPE = NXN_GLOBAL_ACTIONS;
 static const bool s_ONLINE_ALGO = true;
+static const bool s_PARALLEL_RUN = true;
+static const bool s_TREE_REUSE = true;
 static const bool s_RESAMPLE_FROM_LAST_OBS = true;
 static const bool s_VBS_EVALUATOR = false;
 static const bool s_TO_SEND_TREE = false;
-static const int s_ONLINE_GRID_SIZE = 10;
 static const bool s_IS_ACTION_MOVE_FROM_ENEMY_EXIST = false;
+
+static const int s_ONLINE_GRID_SIZE = 10;
 static const int s_PERIOD_OF_DECISION = 1; // sending action not in every decision
 static const int s_SEARCH_PRIOD = 1;
 static const int s_PORT_SEND_TREE = 5678;
@@ -62,7 +65,7 @@ public:
 		// create nxnGrid problem
 
 		// init static members
-		nxnGridState::InitStatic();
+		DetailedState::InitStatic();
 
 		Self_Obj self = CreateSelf(0, 0, s_ONLINE_GRID_SIZE);
 		int targetLoc = s_ONLINE_GRID_SIZE * s_ONLINE_GRID_SIZE - 1;
@@ -104,7 +107,7 @@ int main(int argc, char* argv[])
 	int treePort = s_TO_SEND_TREE ? s_PORT_SEND_TREE : -1;
 
 	nxnGrid::InitUDP(vbsPort, treePort);
-	nxnGrid::InitStaticMembers(s_ONLINE_ALGO, s_PERIOD_OF_DECISION, s_RESAMPLE_FROM_LAST_OBS);
+	nxnGrid::InitStaticMembers(s_ONLINE_ALGO, s_PARALLEL_RUN, s_PERIOD_OF_DECISION, s_RESAMPLE_FROM_LAST_OBS);
 	Globals::config.time_per_move = s_SEARCH_PRIOD;
 
 	//// init lut
@@ -165,7 +168,7 @@ void ReadOfflineLUT(std::string & lutFName, std::map<STATE_TYPE, std::vector<dou
 				readLut.read(reinterpret_cast<char *>(&rewards[a]), sizeof(double));
 			}
 
-			if ((!s_IS_ACTION_MOVE_FROM_ENEMY_EXIST) & s_ACTIONS_TYPE == NXN_GLOBAL_ACTIONS)
+			if ((!s_IS_ACTION_MOVE_FROM_ENEMY_EXIST) && s_ACTIONS_TYPE == NXN_GLOBAL_ACTIONS)
 				rewards.erase(rewards.begin() + 2);
 
 			offlineLut[state] = rewards;

@@ -177,7 +177,7 @@ void nxnGridOfflineGlobalActions::AddActionsRec(intVec & state, intVec & shelter
 		// if the object is enemy add cases of when the enemy is dead
 		if (IsEnemy(currObj))
 		{
-			state[currObj] = m_gridSize * m_gridSize;
+			state[currObj] = Attack::DeadLoc(m_gridSize);
 			AddActionsRec(state, shelters, currObj + 1, buffer);
 		}
 	}
@@ -190,7 +190,7 @@ void nxnGridOfflineGlobalActions::AddAttack(intVec & state, int enemyIdx, intVec
 	double pLoss = 0.0;
 
 	// if enemy dead do nothing
-	if (state[enemyIdx + 1] == m_gridSize * m_gridSize)
+	if (Attack::IsDead(state[enemyIdx + 1], m_gridSize))
 	{
 		pLoss = PositionSingleState(state, state, shelters, 1.0, action, buffer);
 		if (pLoss > 0.0)
@@ -207,7 +207,7 @@ void nxnGridOfflineGlobalActions::AddAttack(intVec & state, int enemyIdx, intVec
 		std::vector<std::pair<intVec, double>> shootOutcomes;
 
 		// creating a vecotr of shoot outcomes
-		m_self.AttackOffline(state[0], state[enemyIdx + 1], state, shelters, m_gridSize, shootOutcomes);
+		m_self.GetAttack()->AttackOffline(state, 0, state[enemyIdx + 1], shelters, m_gridSize, shootOutcomes);
 
 		for (auto v : shootOutcomes)
 		{
@@ -269,7 +269,7 @@ void nxnGridOfflineGlobalActions::AddMoveFromEnemy(intVec & state, int idxEnemy,
 	double pLoss = 0.0;
 
 	// if enemy dead or not exist do nothing
-	if (state[idxEnemy + 1] == m_gridSize * m_gridSize)
+	if (Attack::IsDead(state[idxEnemy + 1], m_gridSize))
 	{
 		pLoss = PositionSingleState(state, state, shelters, 1.0, action, buffer);
 		if (pLoss > 0.0)
@@ -286,7 +286,7 @@ void nxnGridOfflineGlobalActions::AddMoveFromEnemy(intVec & state, int idxEnemy,
 	if (newLoc != state[0])
 	{
 		std::map<int, double> possibleMoves;
-		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleMoves, newLoc);
+		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleMoves, newLoc);
 
 		intVec newState(state);
 		for (auto v : possibleMoves)
@@ -309,7 +309,7 @@ void nxnGridOfflineGlobalActions::AddMoveFromEnemy(intVec & state, int idxEnemy,
 double nxnGridOfflineGlobalActions::MoveToLocation(intVec & state, intVec & shelters, int location, std::string & action, std::string & buffer) const
 {
 	std::map<int, double> possibleMoves;
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, state, possibleMoves, location);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleMoves, location);
 
 	intVec newState(state);
 	double pLoss = 0.0;

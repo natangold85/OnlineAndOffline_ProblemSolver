@@ -1,5 +1,6 @@
 #include "Observations.h"
 #include "Coordinate.h"
+#include "Attacks.h"
 
 #include <string>
 
@@ -21,16 +22,23 @@ bool ObservationByDistance::InRange(int selfLoc, int obsObjLoc, int gridSize) co
 
 double ObservationByDistance::GetProbObservation(int selfLoc, int objLoc, int gridSize, int observation) const
 {
-	// TODO: implement probability of divergence
-
-	int nonObsLoc = selfLoc;
+	int nonObsLoc = NonObservedLoc(gridSize);
 	// only 2 possibilities for valid observation(non observed = self location)
 	if ((observation != objLoc) & (observation != nonObsLoc))
 		return 0.0;
 
-	// if object is dead we have 1.0 prob to observe it
-	if (objLoc == gridSize * gridSize)
-		return 1.0 * (observation == gridSize * gridSize);
+	// calculate prob to success observation
+	double pSuccess = GetProbSuccessfulObservation(selfLoc, objLoc, gridSize);
+
+	return pSuccess * (observation == objLoc) + (1 - pSuccess) * (observation == nonObsLoc);
+}
+
+double ObservationByDistance::GetProbSuccessfulObservation(int selfLoc, int objLoc, int gridSize) const
+{
+	if (Attack::IsDead(objLoc, gridSize))
+	{
+		return DeadSuccessfulObservation();
+	}
 
 	Coordinate self(selfLoc % gridSize, selfLoc / gridSize);
 	Coordinate obj(objLoc % gridSize, objLoc / gridSize);
@@ -40,44 +48,24 @@ double ObservationByDistance::GetProbObservation(int selfLoc, int objLoc, int gr
 	double ratio = dist / (s_SQRT2 * gridSize);
 
 	// calculate prob to success observation
-	double pSuccess = ratio * m_distanceFactor + (1 - ratio);
-
-	return pSuccess * (observation == objLoc) + (1 - pSuccess) * (observation == nonObsLoc);
+	return ratio * m_distanceFactor + (1 - ratio);
 }
 
-int ObservationByDistance::GetObservationObject(int selfLoc, int objLoc, int gridSize, double randomNum) const
+double  ObservationByDistance::DeadSuccessfulObservation() const
 {
-	if (objLoc = gridSize * gridSize)
-		return objLoc;
-
-	Coordinate self(selfLoc % gridSize, selfLoc / gridSize);
-	Coordinate obj(objLoc % gridSize, objLoc / gridSize);
-
-	double dist = self.RealDistance(obj);
-	double ratio = dist / (s_SQRT2 * gridSize);
-
-	// calculate prob to success observation
-	double pSuccess = ratio * m_distanceFactor + (1 - ratio);
-
-	randomNum -= pSuccess;
-	if (randomNum < 0)
-		return objLoc;
-
-	randomNum -= m_nonObserved * (1 - pSuccess);
-	if (randomNum < 0)
-		return selfLoc;
-
-	// TODO : implement divergence observations
+	// TODO : talk to moshe regarding successful observation of death
+	return 1.0;
 }
 
-void ObservationByDistance::InitObsAvailableLocations(int selfLoc, int objLoc, const intVec & state, int gridSize, intVec & observableLocations) const
+void ObservationByDistance::InitObsAvailableLocations(int selfLoc, int objLoc, int gridSize, observableLocations & obsLocations) const
 {
 	//TODO: until divergence insertion only 2 possible location (observed and non-observed)
-	observableLocations.emplace_back(objLoc);
+	double probSuccess = GetProbSuccessfulObservation(selfLoc, objLoc, gridSize);
+	obsLocations.emplace_back(objLoc, probSuccess);
 
 	// insert non-observed location if the object is not dead
-	if (objLoc != gridSize * gridSize)
-		observableLocations.emplace_back(selfLoc);
+	if (probSuccess < 1)
+		obsLocations.emplace_back(NonObservedLoc(gridSize), 1 - probSuccess);
 }
 
 std::string ObservationByDistance::String() const

@@ -21,10 +21,6 @@ public:
 	Attack_Obj(const Attack_Obj&) = default;
 	Attack_Obj& operator=(const Attack_Obj&) = default;
 
-	// calculations of attacks
-	virtual void AttackOnline(int objLoc, int targetLoc, intVec & state, intVec & shelterLoc, int gridSize, double random) const;
-	virtual void AttackOffline(int objLoc, int targetLoc, intVec & state, intVec & shelters, int gridSize, Attack::shootOutcomes & result) const;
-
 	Attack *GetAttack() const  { return m_attack.get(); };
 
 protected:

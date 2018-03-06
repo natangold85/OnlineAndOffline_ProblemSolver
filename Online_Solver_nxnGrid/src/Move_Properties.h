@@ -6,25 +6,33 @@
 
 #include "Coordinate.h"
 
+// directions available for moves
+enum DIRECTIONS { SOUTH, NORTH, EAST, WEST, SOUTH_EAST, NORTH_EAST, SOUTH_WEST, NORTH_WEST, NO_DIRECTION, NUM_DIRECTIONS };
+
 ///properties of movement for object on grid
 class Move_Properties
 {
 public:
 	using intVec = std::vector<int>;
 
+	/*LUT*/
+	static std::vector<Coordinate> s_directionsLUT;
+	static std::vector<std::string> s_directionNamesLUT;
+
 	Move_Properties() = default;
 	~Move_Properties() = default;
 	Move_Properties(const Move_Properties &) = default;
 	Move_Properties& operator=(const Move_Properties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target = -1) const = 0;
+	// get possible locations 
+	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target = -1) const = 0;
 	virtual std::string String() const = 0;
-protected:
-	static bool NoBlockingLocation(const intVec & blockingObjLocations, int move);
-	static void GetRandomMoves(intVec & randomMoves,const intVec & blockingObjLocations, int objLocation, int gridSize);
-	static int MoveToTarget(int location, int target, int gridSize, intVec & blockingObjLocations);
 
-	static std::vector<Coordinate> s_availableMovesLUT;
+	static std::vector<Coordinate> InitDirectionsLUT();
+	static std::vector<std::string> InitDirectionsNamesLUT();
+protected:
+	static void GetRandomMoves(intVec & randomMoves, int objLocation, int gridSize);
+	static int MoveToTarget(int location, int target, int gridSize);
 };
 
 class SimpleMoveProperties : public Move_Properties
@@ -35,7 +43,7 @@ public:
 	SimpleMoveProperties(const SimpleMoveProperties &) = default;
 	SimpleMoveProperties& operator=(const SimpleMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 private:
 	double m_pSuccess;
@@ -49,7 +57,7 @@ public:
 	GeneralDirectionMoveProperties(const GeneralDirectionMoveProperties &) = default;
 	GeneralDirectionMoveProperties& operator=(const GeneralDirectionMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 private:
 	double m_pSuccess;
@@ -65,7 +73,7 @@ public:
 	LowLevelMoveProperties(const LowLevelMoveProperties &) = default;
 	LowLevelMoveProperties& operator=(const LowLevelMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 private:
 	double m_pSuccess;
@@ -80,7 +88,7 @@ public:
 	TargetDerivedMoveProperties(const TargetDerivedMoveProperties &) = default;
 	TargetDerivedMoveProperties& operator=(const TargetDerivedMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 	
 private:
@@ -97,7 +105,7 @@ public:
 	NaiveMoveProperties(const NaiveMoveProperties &) = default;
 	NaiveMoveProperties& operator=(const NaiveMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, intVec & blockingObjLocs, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 
 private:
