@@ -1,5 +1,8 @@
 #include "../../include/despot/core/policy.h"
 #include "../../include/despot/core/pomdp.h"
+
+#include "../nxnGrid.h"
+
 //#include <unistd.h>
 
 using namespace std;
@@ -41,18 +44,19 @@ ValuedAction Policy::RecursiveValue(const vector<State*>& particles,
 		|| (history.Size() - initial_depth_
 			>= Globals::config.max_policy_sim_len)) {
 		return particle_lower_bound_->Value(particles);
-	} else {
+	} else 
+	{
 		int action = Action(particles, streams, history);
 
 		double value = 0;
 
 		map<OBS_TYPE, vector<State*> > partitions;
 		OBS_TYPE obs;
+		OBS_TYPE lastObs = history.Size() > 0 ? history.LastObservation() : nxnGrid::NonObservedState();
 		double reward;
 		for (int i = 0; i < particles.size(); i++) {
 			State* particle = particles[i];
-			bool terminal = model_->Step(*particle,
-				streams.Entry(particle->scenario_id), action, reward, obs);
+			bool terminal = model_->Step(*particle, streams.Entry(particle->scenario_id), action, lastObs, reward, obs);
 
 			value += reward * particle->weight;
 

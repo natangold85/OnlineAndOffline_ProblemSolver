@@ -19,28 +19,13 @@ void disableBufferedIO(void) {
   setvbuf(stderr, nullptr, _IONBF, 0);
 }
 
-void TreeBuilderThread(ThreadDataStruct * data)
-{
-	Evaluator * evaluator = reinterpret_cast<Evaluator *>(data->m_evaluator);
-
-	 for (int i = 0; i < INT_MAX; i++) 
-	 {
-		evaluator->RunStep(data, i);
-		{ // inform to builder that round is over
-			std::lock_guard<std::mutex> lock(data->m_flagsMutex);
-			if (data->m_terminal)
-				break;
-		}
-	 }
-}
-
 SimpleTUI::SimpleTUI() {}
 
 SimpleTUI::~SimpleTUI() {}
 
-Solver *SimpleTUI::InitializeSolver(DSPOMDP *model, string solver_type,
+SolverBase *SimpleTUI::InitializeSolver(std::vector<DSPOMDP*> models, string solver_type,
                                     option::Option *options) {
-  Solver *solver = NULL;
+	SolverBase *solver = NULL;
   // DESPOT or its default policy
   if (solver_type == "DESPOT" ||
       solver_type == "PLB") // PLB: particle lower bound
@@ -48,7 +33,7 @@ Solver *SimpleTUI::InitializeSolver(DSPOMDP *model, string solver_type,
     string blbtype = options[E_BLBTYPE] ? options[E_BLBTYPE].arg : "DEFAULT";
     string lbtype = options[E_LBTYPE] ? options[E_LBTYPE].arg : "DEFAULT";
     ScenarioLowerBound *lower_bound =
-        model->CreateScenarioLowerBound(lbtype, blbtype);
+		models[0]->CreateScenarioLowerBound(lbtype, blbtype);
 
     logi << "Created lower bound " << typeid(*lower_bound).name() << endl;
 
@@ -56,35 +41,36 @@ Solver *SimpleTUI::InitializeSolver(DSPOMDP *model, string solver_type,
       string bubtype = options[E_BUBTYPE] ? options[E_BUBTYPE].arg : "DEFAULT";
       string ubtype = options[E_UBTYPE] ? options[E_UBTYPE].arg : "DEFAULT";
       ScenarioUpperBound *upper_bound =
-          model->CreateScenarioUpperBound(ubtype, bubtype);
+		  models[0]->CreateScenarioUpperBound(ubtype, bubtype);
 
       logi << "Created upper bound " << typeid(*upper_bound).name() << endl;
 
-      solver = new DESPOT(model, lower_bound, upper_bound);
+	  solver = new DESPOT(models[0], lower_bound, upper_bound);
     } else
       solver = lower_bound;
   } // AEMS or its default policy
   else if (solver_type == "AEMS" || solver_type == "BLB") {
     string lbtype = options[E_LBTYPE] ? options[E_LBTYPE].arg : "DEFAULT";
     BeliefLowerBound *lower_bound =
-        static_cast<BeliefMDP *>(model)->CreateBeliefLowerBound(lbtype);
+		static_cast<BeliefMDP *>(models[0])->CreateBeliefLowerBound(lbtype);
 
     logi << "Created lower bound " << typeid(*lower_bound).name() << endl;
 
     if (solver_type == "AEMS") {
       string ubtype = options[E_UBTYPE] ? options[E_UBTYPE].arg : "DEFAULT";
       BeliefUpperBound *upper_bound =
-          static_cast<BeliefMDP *>(model)->CreateBeliefUpperBound(ubtype);
+		  static_cast<BeliefMDP *>(models[0])->CreateBeliefUpperBound(ubtype);
 
       logi << "Created upper bound " << typeid(*upper_bound).name() << endl;
 
-      solver = new AEMS(model, lower_bound, upper_bound);
+	  solver = new AEMS(models[0], lower_bound, upper_bound);
     } else
       solver = lower_bound;
   } // POMCP or DPOMCP
-  else if (solver_type == "POMCP" || solver_type == "DPOMCP") {
+  else if (solver_type == "POMCP" || solver_type == "DPOMCP" || solver_type == "user")
+  {
     string ptype = options[E_PRIOR] ? options[E_PRIOR].arg : "DEFAULT";
-    POMCPPrior *prior = model->CreatePOMCPPrior(ptype);
+	POMCPPrior *prior = models[0]->CreatePOMCPPrior(ptype);
 
     logi << "Created POMCP prior " << typeid(*prior).name() << endl;
 
@@ -92,14 +78,30 @@ Solver *SimpleTUI::InitializeSolver(DSPOMDP *model, string solver_type,
       prior->exploration_constant(Globals::config.pruning_constant);
     }
 
-	if (solver_type == "POMCP")
+	if (solver_type == "POMCP" || solver_type == "user")
 	{
-		solver = new POMCP(model, prior);
+		solver = new POMCP(models[0], prior);
 		((POMCP *)solver)->reuse(true);
 	}
     else
-      solver = new DPOMCP(model, prior);
-  } else { // Unsupported solver
+		solver = new DPOMCP(models[0], prior);
+
+  }
+  else if (solver_type == "Parallel_POMCP")
+  {
+	  string ptype = options[E_PRIOR] ? options[E_PRIOR].arg : "DEFAULT";
+	  std::vector<Solver *> solvers;
+	  for (int a = 0; a < models[0]->NumActions(); ++a)
+	  {
+		  POMCPPrior *prior = models[a]->CreatePOMCPPrior(ptype);
+		  solvers.emplace_back(new POMCP(models[a], prior));
+		  ((POMCP *)solvers[a])->reuse(true);
+	  }
+
+	  solver = new ParallelSolver(solvers, models[0]->NumActions());
+  }
+  else
+  { // Unsupported solver
     cerr << "ERROR: Unsupported solver type: " << solver_type << endl;
     exit(1);
   }
@@ -177,24 +179,27 @@ void SimpleTUI::OptionParse(option::Option *options, int &num_runs,
 }
 
 void SimpleTUI::InitializeEvaluator(Evaluator *&simulator,
-                                    option::Option *options, DSPOMDP *model,
-                                    Solver *solver, int num_runs,
+									option::Option *options, DSPOMDP * model,
+									SolverBase * solver, int num_runs,
                                     clock_t main_clock_start,
                                     string simulator_type, string belief_type,
                                     int time_limit, string solver_type) {
 
-  if (time_limit != -1) {
+  if (time_limit != -1) 
+  {
     simulator =
         new POMDPEvaluator(model, belief_type, solver, main_clock_start, &cout,
                            EvalLog::curr_inst_start_time + time_limit,
                            num_runs * Globals::config.sim_len);
-  } else {
+  } 
+  else 
+  {
     simulator =
         new POMDPEvaluator(model, belief_type, solver, main_clock_start, &cout);
   }
 }
 
-void SimpleTUI::DisplayParameters(option::Option *options, DSPOMDP *model, std::ofstream & out) 
+void SimpleTUI::DisplayParameters(option::Option *options, DSPOMDP *model, std::string & solverType, std::ofstream & out)
 {
 	static int counter = 0;
 	if (counter > 0)
@@ -202,7 +207,8 @@ void SimpleTUI::DisplayParameters(option::Option *options, DSPOMDP *model, std::
 	counter = 1;
 	string lbtype = options[E_LBTYPE] ? options[E_LBTYPE].arg : "DEFAULT";
 	string ubtype = options[E_UBTYPE] ? options[E_UBTYPE].arg : "DEFAULT";
-	out << "Model = " << typeid(*model).name() << endl
+	out << "Solver type" << solverType;
+	out << "\nModel = " << typeid(*model).name() << endl
 				<< "Random root seed = " << Globals::config.root_seed << endl
 				<< "Search depth = " << Globals::config.search_depth << endl
 				<< "Discount = " << Globals::config.discount << endl
@@ -224,12 +230,14 @@ void SimpleTUI::DisplayParameters(option::Option *options, DSPOMDP *model, std::
 }
 
 void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
-                             option::Option *options, int num_runs,
-                             bool search_solver, Solver *&solver,
+                             option::Option *options, int num_runs, SolverBase * &solver,
                              string simulator_type, clock_t main_clock_start,
-                             int start_run) {
+                             int start_run) 
+{
   // Run num_runs simulations
-  vector<double> round_rewards(num_runs);
+
+	vector<double> round_rewards(num_runs);
+  
   for (int round = start_run; round < start_run + num_runs; round++) 
   {
 	  nxnGrid *m = static_cast<nxnGrid *>(model); //NATAN CHANGES (random initial condition)
@@ -238,39 +246,15 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
                 << "####################################### Round " << round
                 << " #######################################" << endl;
 
-    if (search_solver) {
-      if (round == 0) {
-        solver = InitializeSolver(model, "DESPOT", options);
-        default_out << "Solver: " << typeid(*solver).name() << endl;
 
-        simulator->solver(solver);
-      } else if (round == 5) {
-        solver = InitializeSolver(model, "POMCP", options);
-        default_out << "Solver: " << typeid(*solver).name() << endl;
-
-        simulator->solver(solver);
-      } else if (round == 10) {
-        double sum1 = 0, sum2 = 0;
-        for (int i = 0; i < 5; i++)
-          sum1 += round_rewards[i];
-        for (int i = 5; i < 10; i++)
-          sum2 += round_rewards[i];
-        if (sum1 < sum2)
-          solver = InitializeSolver(model, "POMCP", options);
-        else
-          solver = InitializeSolver(model, "DESPOT", options);
-        default_out << "Solver: " << typeid(*solver).name()
-                    << " DESPOT:" << sum1 << " POMCP:" << sum2 << endl;
-      }
-
-      simulator->solver(solver);
-    }
-
-    simulator->InitRound();
+	simulator->InitRound(nxnGrid::ParallelRun());
 	int i = 0;
-
+	if (simulator_type == "user")
+	{
+		simulator->UserPlayRound();
+	}
 	if (nxnGrid::ParallelRun())
-		RunRound(simulator, model, round);
+		simulator->RunRoundForParallel(round);
 	else
 	{	// original implementation
 		for (; i < Globals::config.sim_len; i++) {
@@ -279,8 +263,6 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
 			<< " Step " << i << "-----------------------------------"
 			<< endl;*/
 			double step_start_t = get_time_second();
-
-
 
 			bool terminal = simulator->RunStep(i, round);
 
@@ -321,96 +303,6 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
   }
 }
 
-void SimpleTUI::RunRound(Evaluator * evaluator, DSPOMDP * model, int round)
-{
-	ThreadDataStruct dataForThread;
-	
-	dataForThread.m_evaluator = evaluator;
-	dataForThread.m_action = -1;
-	dataForThread.m_lastObservation = -1;
-	dataForThread.m_actionNeeded = false;
-	dataForThread.m_terminal = false;
-	dataForThread.m_observationRecieved = false;
-
-	std::thread treeBuilder(TreeBuilderThread, &dataForThread);
-	
-	std::vector<Tree_Properties> actionsTreeData(model->NumActions());
-	bool terminal = false;
-	
-	for (int step = 0; step < Globals::config.sim_len && !terminal; ++step)
-	{
-		double stepStart = get_time_second();
-		Sleep(Globals::config.time_per_move * 1000);
-
-		double actionWanted = get_time_second();
-
-		// inform to builder that action is needed
-		{ 
-			std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
-			dataForThread.m_actionNeeded = true;
-		}
-
-		// wait for action is ready
-		bool actionRecieved = false;
-		while (!actionRecieved)
-		{
-			std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
-			actionRecieved = dataForThread.m_actionRecieved;
-		}
-
-		double actionWantedMsgDelievered = get_time_second();
-		
-		int action = -1;
-		double reward;
-		OBS_TYPE obs;
-		State currState;
-
-		{ // take action and update observation
-			std::lock_guard<std::mutex> mainLock(dataForThread.m_mainMutex);
-			action = dataForThread.m_action;
-			
-			nxnGrid::UpdateRealAction(action);
-			
-			terminal = evaluator->ExecuteAction(action, reward, obs);
-			currState.state_id = evaluator->currStateId();
-
-			evaluator->GetTreeProperties(actionsTreeData);
-
-			dataForThread.m_lastObservation = obs;
-			std::lock_guard<std::mutex> flagsLock(dataForThread.m_flagsMutex);
-			dataForThread.m_observationRecieved = true;
-			dataForThread.m_actionRecieved = false;
-		}
-		
-		double actionCommited = get_time_second();
-
-		// print data
-		std::cout << "- Tree Properties: (size,count,value)\n";
-		for (auto actionProp : actionsTreeData)
-		{
-			std::cout << actionProp.m_size << ", " << actionProp.m_nodeCount << ", " << actionProp.m_nodeValue << "\n";
-		}
-
-		std::cout << "- Action = ";
-		model->PrintAction(action);
-		std::cout << "- Current State: : ";
-		model->PrintState(currState);
-		std::cout << "- Observation: : ";
-		model->PrintObs(currState, obs);
-		std::cout << "- ObsProb = " << model->ObsProb(obs, currState, action) << "\n";
-
-		std::cout << "\n- StepReward = " << reward << "\n\n\n";
-	}
-
-	{ // inform to builder that round is over
-		std::lock_guard<std::mutex> lock(dataForThread.m_flagsMutex);
-		dataForThread.m_terminal = true;
-	}
-
-	treeBuilder.join();
-}
-
-
 void SimpleTUI::PrintResult(int num_runs, Evaluator *simulator,
                             clock_t main_clock_start, std::string & result) {
 
@@ -445,7 +337,7 @@ void SimpleTUI::PrintResult(int num_runs, Evaluator *simulator,
 	simulator->PrintTreeProp(result);
 }
 
-int SimpleTUI::run(int argc, char *argv[], std::ofstream & result) {
+int SimpleTUI::run(int argc, char *argv[], std::ofstream & result, std::string solverType) {
 
 	clock_t main_clock_start = clock();
 	EvalLog::curr_inst_start_time = get_time_second();
@@ -460,7 +352,7 @@ int SimpleTUI::run(int argc, char *argv[], std::ofstream & result) {
 	option::Option *buffer = new option::Option[stats.buffer_max];
 	option::Parser parse(usage, argc, argv, options, buffer);
 
-	string solver_type = "POMCP";
+	string solver_type = solverType;
 	bool search_solver;
 
 	/* =========================
@@ -500,17 +392,26 @@ int SimpleTUI::run(int argc, char *argv[], std::ofstream & result) {
 	* =========================*/
 	DSPOMDP *model = InitializeModel(options);
 
-
 	/* =========================
-	* initialize solver
+	* initialize solvers
 	* =========================*/
-	Solver *solver = InitializeSolver(model, solver_type, options);
+	std::vector<DSPOMDP *> models{ model };
+	if (solverType == "Parallel_POMCP")
+	{
+		for (int a = 1; a < model->NumActions(); ++a)
+		{
+			models.emplace_back(InitializeModel(options));
+		}
+	}
+	else if (solverType == "user")
+		simulator_type = solverType;
+
+	SolverBase * solver = InitializeSolver(models, solver_type, options);
 
 	/* =========================
 	* Print parameters
 	* =========================*/
-	DisplayParameters(options, model, result);
-	assert(solver != NULL);
+	DisplayParameters(options, model, solverType, result);
 
 	/* =========================
 	* initialize simulator
@@ -528,7 +429,7 @@ int SimpleTUI::run(int argc, char *argv[], std::ofstream & result) {
 	/* =========================
 	* run simulator
 	* =========================*/
-	RunEvaluator(model, simulator, options, num_runs, search_solver, solver,
+	RunEvaluator(model, simulator, options, num_runs, solver,
 				simulator_type, main_clock_start, start_run);
 
 	simulator->End();

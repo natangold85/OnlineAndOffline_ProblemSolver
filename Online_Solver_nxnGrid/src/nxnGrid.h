@@ -52,6 +52,7 @@ public:
 	static int GetObservedObjLocation(OBS_TYPE state_id, int objIdx);
 
 	STATE_TYPE GetStateId() const;
+	OBS_TYPE GetObsId() const;
 	static STATE_TYPE MaxState();
 
 	// location vec functions
@@ -79,10 +80,13 @@ public:
 
 	void EraseNonInv();
 	void EraseObject(int objectIdx);
+	
+	bool IsProtected(int objIdx) const;
 
 	bool NoEnemies(int gridSize) const;
 	bool IsNonInvDead(int gridSize) const;
 
+	//bool NonValidState() const;
 	/*MEMBERS*/
 	intVec m_locations;
 
@@ -174,6 +178,9 @@ public:
 	/// return grid size
 	int GetGridSize() const { return m_gridSize; };
 
+	/// get non observed state
+	static OBS_TYPE NonObservedState() { return s_nonObservedState; };
+
 	/// Functions for online solver improvement
 
 	/// return vector of rewards given model and prior
@@ -201,6 +208,7 @@ public:
 	/// return the probability for an observation given a state and an action
 	double ObsProbOneObj(OBS_TYPE obs, const State& state, int action, int objIdx) const;
 
+	
 	// create particle vector based on possible objects location and its weight
 	void CreateParticleVec(std::vector<std::vector<std::pair<int, double> > > & objLocations, std::vector<State*> & particles) const;
 
@@ -237,6 +245,10 @@ protected:
 	/// return identity of the objIdx
 	enum OBJECT WhoAmI(int objIdx) const;
 
+	inline static double RandomNum()
+	{	
+		return Random::s_threadSafeRand[GetCurrentThreadId()].NextDouble();
+	}
 	/// create a vector of random numbers between 0 - 1
 	static void CreateRandomVec(doubleVec & randomVec, int size);
 
@@ -250,6 +262,8 @@ protected:
 	void CalcMovement(DetailedState & state, const Movable_Obj *object, double rand, int objIdx) const;
 
 	intVec GetSheltersVec() const;
+
+	void GetNonValidLocations(const DetailedState & state, int objIdx, intVec& nonValLoc) const;
 
 private:
 	///// fill values of subtrees
@@ -303,6 +317,9 @@ private:
 	int FindObject(intVec & state, intVec & identity, int object, int idx);
 	int FindObject(intVec & state, intVec & identity, int object, int observedObj, bool & isObserved, int idx);
 
+	/// get state where all objects are non-observed
+	OBS_TYPE GetNonObservedState() const;
+
 	/// add actions to specific enemy
 	virtual void AddActionsToEnemy() = 0;
 	virtual void AddActionsToShelter() = 0;
@@ -325,6 +342,7 @@ protected:
 	
 	std::vector<ObjInGrid> m_shelters;
 
+	static OBS_TYPE s_nonObservedState;
 	// init locations of objects (needs to be in the size of number of objects - including self)
 	static std::vector<intVec> s_objectsInitLocations;
 
@@ -335,14 +353,16 @@ protected:
 	static lut_t s_LUT;
 	static int s_lutGridSize;
 
-	// for model
-	mutable MemoryPool<nxnGridState> memory_pool_;
+	// for memory allocating
+	static std::mutex s_memoryMutex;
+	static MemoryPool<nxnGridState> memory_pool_;
 
 	/// for comunication with VBS
 	static UDP_Server s_udpVBS;
 	/// for sending tree
 	static UDP_Server s_udpTree;
 public:
+
 	/// type of model
 	static bool s_isOnline;
 	static bool s_parallelRun;

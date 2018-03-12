@@ -115,7 +115,7 @@ vector<State*> Belief::Resample(int num, const vector<State*>& belief,
 			if (hstart == 0)
 			{
 				addToHStart = 1;
-				model->Step(*particle, Random::RANDOM.NextDouble(), history.Action(0), particle->state_id, reward, obs);
+				model->Step(*particle, Random::RANDOM.NextDouble(), history.Action(0), nxnGrid::NonObservedState(), reward, obs);
 
 				double prob = modelCast->ObsProbOneObj(history.Observation(0), *particle, history.Action(0), obj);
 				if (prob == 0)
@@ -368,7 +368,7 @@ vector<State*> ParticleBelief::Sample(int num) const {
 
 void ParticleBelief::Update(int action, OBS_TYPE obs) 
 {
-	OBS_TYPE prevObs = history_.Size() > 0 ? history_.LastObservation() : 0;
+	OBS_TYPE prevObs = history_.Size() > 0 ? history_.LastObservation() : nxnGrid::NonObservedState();
 	history_.Add(action, obs);
 
 	vector<State*> updated;
@@ -378,8 +378,7 @@ void ParticleBelief::Update(int action, OBS_TYPE obs)
 	// Update particles
 	for (int i = 0; i <particles_.size(); i++) {
 		State* particle = particles_[i];
-		OBS_TYPE lastObs = prevObs + particle->state_id * (prevObs == 0);
-		bool terminal = model_->Step(*particle, Random::RANDOM.NextDouble(), action, lastObs, reward, o);
+		bool terminal = model_->Step(*particle, Random::RANDOM.NextDouble(), action, prevObs, reward, o);
 		double prob = model_->ObsProb(obs, *particle, action);
 
 		if (!terminal && prob) { // Terminal state is not required to be explicitly represented and may not have any observation

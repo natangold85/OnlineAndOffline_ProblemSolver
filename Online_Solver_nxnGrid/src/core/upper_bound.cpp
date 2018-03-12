@@ -2,6 +2,8 @@
 #include "../../include/despot/core/pomdp.h"
 #include "../../include/despot/core/mdp.h"
 
+#include "..\nxnGrid.h"
+
 using namespace std;
 
 namespace despot {
@@ -96,7 +98,7 @@ void LookaheadUpperBound::Init(const RandomStreams& streams)
 						double reward = 0;
 						State* copy = model_->Copy(indexer_.GetState(s));
 						// for adding observation adding the observation of step s (FRAGILE : obs = state_id) NATAN CHANGES 
-						bool terminal = model_->Step(*copy, streams.Entry(p, t), a, copy->state_id, reward);
+						bool terminal = model_->Step(*copy, streams.Entry(p, t), a, nxnGrid::NonObservedState(), reward);
 						model_->Free(copy);
 						reward += (!terminal) * Globals::Discount()
 							* bounds_[p][t + 1][indexer_.GetIndex(copy)];

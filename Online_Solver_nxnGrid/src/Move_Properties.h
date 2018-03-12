@@ -25,16 +25,19 @@ public:
 	Move_Properties& operator=(const Move_Properties&) = default;
 
 	// get possible locations 
-	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target = -1) const = 0;
+	virtual void GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target = -1) const = 0;
 	virtual std::string String() const = 0;
 
 	static std::vector<Coordinate> InitDirectionsLUT();
 	static std::vector<std::string> InitDirectionsNamesLUT();
 protected:
-	static void GetRandomMoves(intVec & randomMoves, int objLocation, int gridSize);
-	static int MoveToTarget(int location, int target, int gridSize);
+	static bool ValidMove(int move, const intVec & nonValidLocations);
+	static void GetRandomMoves(intVec & randomMoves, int objLocation, int gridSize, const intVec & nonValidLocations);
+	static int MoveToTarget(int location, int target, int gridSize, const intVec & nonValidLocations);
+	static void SpawnObj(int gridSize, double probToSpawn, const intVec & nonValidLocations, std::map<int, double> & possibleLocations);
 };
 
+/* SELF ORIENTED MOVE PROPERTIES */
 class SimpleMoveProperties : public Move_Properties
 {
 public:
@@ -43,7 +46,7 @@ public:
 	SimpleMoveProperties(const SimpleMoveProperties &) = default;
 	SimpleMoveProperties& operator=(const SimpleMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 private:
 	double m_pSuccess;
@@ -57,8 +60,9 @@ public:
 	GeneralDirectionMoveProperties(const GeneralDirectionMoveProperties &) = default;
 	GeneralDirectionMoveProperties& operator=(const GeneralDirectionMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
+
 private:
 	double m_pSuccess;
 	double m_pDirectStraightSuccess;
@@ -73,44 +77,47 @@ public:
 	LowLevelMoveProperties(const LowLevelMoveProperties &) = default;
 	LowLevelMoveProperties& operator=(const LowLevelMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 private:
 	double m_pSuccess;
 };
 
+/* OTHER OBJECTS ORIENTED MOVE PROPERTIES */
+
 class TargetDerivedMoveProperties : public Move_Properties
 {
 public:
 	explicit TargetDerivedMoveProperties();
-	explicit TargetDerivedMoveProperties(double stay, double towardTarget);
+	explicit TargetDerivedMoveProperties(double stay, double towardTarget, double pToSpawnIfDead = 0);
 	~TargetDerivedMoveProperties() = default;
 	TargetDerivedMoveProperties(const TargetDerivedMoveProperties &) = default;
 	TargetDerivedMoveProperties& operator=(const TargetDerivedMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 	
 private:
 	double m_pRandomMove;
 	double m_pStay;
 	double m_pTowardTarget;
+	double m_pToSpawnIfDead;
 };
 
 class NaiveMoveProperties : public Move_Properties
 {
 public:
-	explicit NaiveMoveProperties(double stay = 1.0);
+	explicit NaiveMoveProperties(double stay = 1.0, double pToSpawnIfDead = 0);
 	~NaiveMoveProperties() = default;
 	NaiveMoveProperties(const NaiveMoveProperties &) = default;
 	NaiveMoveProperties& operator=(const NaiveMoveProperties&) = default;
 
-	virtual void GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const override;
+	virtual void GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const override;
 	virtual std::string String() const override;
 
 private:
 	double m_pRandomMove;
 	double m_pStay;
-
+	double m_pToSpawnIfDead;
 };
 # endif //MOVE_PROPERTIES_H

@@ -5,11 +5,21 @@
 #include <cstdlib>
 #include <random>
 
+#include <time.h>
+
 using namespace std;
 
 namespace despot {
 
 Random Random::RANDOM((unsigned) 0);
+
+std::map<int, Random> Random::s_threadSafeRand;
+
+Random::Random() :
+seed_((unsigned)(time(NULL))) 
+{
+	std::srand(seed_);
+}
 
 Random::Random(double seed) :
  seed_((unsigned) (RAND_MAX * seed)) {

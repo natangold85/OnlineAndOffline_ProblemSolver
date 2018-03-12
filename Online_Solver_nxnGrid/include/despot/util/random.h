@@ -2,6 +2,7 @@
 #define RANDOM_H
 
 #include <vector>
+#include <map>
 
 namespace despot {
 
@@ -12,6 +13,9 @@ private:
 public:
 	static Random RANDOM;
 
+	static std::map<int, Random> s_threadSafeRand;
+
+	Random();
 	Random(double seed);
 	Random(unsigned seed);
 

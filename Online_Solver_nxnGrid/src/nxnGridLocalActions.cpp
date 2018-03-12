@@ -144,7 +144,9 @@ bool nxnGridLocalActions::MakeMove(DetailedState & state, double random, ACTION 
 	if (target.ValidLocation(m_gridSize))
 	{
 		std::map<int, double> possibleLocs;
-		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocs, target.GetIdx(m_gridSize));
+		intVec nonValidLocations;
+		GetNonValidLocations(state, 0, nonValidLocations);
+		m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, nonValidLocations, possibleLocs, target.GetIdx(m_gridSize));
 
 		int loc = -1;
 		for (auto v : possibleLocs)
@@ -176,7 +178,9 @@ void nxnGridLocalActions::Attack(DetailedState & state, int target, double rando
 void nxnGridLocalActions::MoveToLocation(DetailedState & state, int location, double random) const
 {
 	std::map<int, double> possibleLocations;
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, location);
+	intVec nonValidLocations;
+	GetNonValidLocations(state, 0, nonValidLocations);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, nonValidLocations, possibleLocations, location);
 
 	int loc = -1;
 	for (auto v : possibleLocations)

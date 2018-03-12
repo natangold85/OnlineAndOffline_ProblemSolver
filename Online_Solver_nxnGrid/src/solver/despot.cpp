@@ -2,6 +2,7 @@
 #include "../../include/despot/solver/pomcp.h"
 #include "../../include/despot/core/pomdp.h"
 
+#include "..\nxnGrid.h"
 using namespace std;
 
 namespace despot {
@@ -649,6 +650,7 @@ void DESPOT::Expand(QNode* qnode, ScenarioLowerBound* lb,
 
 	// Partition particles by observation
 	map<OBS_TYPE, vector<State*> > partitions;
+	OBS_TYPE prevObs = history.Size() > 0 ? history.LastObservation() : nxnGrid::NonObservedState();
 	OBS_TYPE obs;
 	double reward;
 	for (int i = 0; i < particles.size(); i++) {
@@ -660,7 +662,7 @@ void DESPOT::Expand(QNode* qnode, ScenarioLowerBound* lb,
 		logd << " Before step: " << *copy << endl;
 
 		bool terminal = model->Step(*copy, streams.Entry(copy->scenario_id),
-			qnode->edge(), reward, obs);
+			qnode->edge(), prevObs, reward, obs);
 
 		step_reward += reward * copy->weight;
 
@@ -732,8 +734,9 @@ ValuedAction DESPOT::Evaluate(VNode* root, vector<State*>& particles,
 
 			double reward;
 			OBS_TYPE obs;
+			// TODO when implementing despot may fall due to first step 
 			bool terminal = model->Step(*copy, streams.Entry(copy->scenario_id),
-				action, reward, obs);
+				action, prior->history().LastObservation(), reward, obs);
 
 			val += discount * reward;
 			discount *= Globals::Discount();

@@ -61,7 +61,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 	DetailedState state(s);
 
 	// drawing more random numbers for each variable
-	double randomSelfObservation = Random::RANDOM.NextDouble();
+	double randomSelfObservation = RandomNum();
 
 	std::vector<double> randomObjectMoves;
 	CreateRandomVec(randomObjectMoves, CountMovingObjects() - 1);
@@ -125,8 +125,10 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 			MoveFromEnemy(state, obsEnemyLoc, randomSelfAction, lastObs);
 	}
 
+
 	// set next position of the objects on grid
 	SetNextPosition(state, randomObjectMoves);
+
 	// update observation
 	obs = FindObservation(state, randomSelfObservation);
 	
@@ -148,7 +150,6 @@ int nxnGridGlobalActions::NumEnemyActions() const
 int nxnGridGlobalActions::NumActions() const
 {
 	// for any enemy add attack and move from enemy
-
 	return NumBasicActions() + m_enemyVec.size() * NumEnemyActions();
 };
 
@@ -208,7 +209,9 @@ void nxnGridGlobalActions::MoveFromEnemy(DetailedState & state, int obsEnemyLoc,
 		return;
 
 	std::map<int, double> possibleLocations;
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, newLoc);
+	intVec nonValidLocations;
+	GetNonValidLocations(state, 0, nonValidLocations);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, nonValidLocations, possibleLocations, newLoc);
 
 	int loc = -1;
 	for (auto v : possibleLocations)
@@ -225,16 +228,14 @@ void nxnGridGlobalActions::MoveFromEnemy(DetailedState & state, int obsEnemyLoc,
 void nxnGridGlobalActions::MoveToLocation(DetailedState & state, int location, double random) const
 {
 	std::map<int, double> possibleLocations;
-
-	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, location);
+	intVec nonValidLocations;
+	GetNonValidLocations(state, 0, nonValidLocations);
+	m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, nonValidLocations, possibleLocations, location);
 
 	int loc = -1;
 	for (auto v : possibleLocations)
 	{
 		loc = v.first;
-		if (loc > 99)
-			m_self.GetMovement()->GetPossibleMoves(state[0], m_gridSize, possibleLocations, location);
-
 		random -= v.second;
 		if (random <= 0.0)
 			break;

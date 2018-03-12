@@ -145,29 +145,27 @@ public:
   virtual DSPOMDP* InitializeModel(option::Option* options) = 0;
   virtual void InitializeDefaultParameters() = 0;
 
-  Solver* InitializeSolver(DSPOMDP* model, std::string solver_type,
+  SolverBase* InitializeSolver(std::vector<DSPOMDP*> models, std::string solver_type,
                            option::Option* options);
 
-  int run(int argc, char *argv[], std::ofstream & result);
+  int run(int argc, char *argv[], std::ofstream & result, std::string solverType);
 
   void OptionParse(option::Option* options, int& num_runs,
                    std::string& simulator_type, std::string& belief_type, int& time_limit,
                    std::string& solver_type, bool& search_solver);
 
   void InitializeEvaluator(Evaluator*& simulator, option::Option* options,
-                           DSPOMDP* model, Solver* solver, int num_runs,
+							DSPOMDP* models, SolverBase* solver, int num_runs,
                            clock_t main_clock_start, std::string simulator_type,
                            std::string belief_type, int time_limit,
                            std::string solver_type);
 
-  void DisplayParameters(option::Option* options, DSPOMDP* model, std::ofstream & out);
+  void DisplayParameters(option::Option* options, DSPOMDP* model, std::string & solverType, std::ofstream & out);
 
   void RunEvaluator(DSPOMDP* model, Evaluator* simulator,
-                    option::Option* options, int num_runs, bool search_solver,
-                    Solver*& solver, std::string simulator_type,
+                    option::Option* options, int num_runs,
+					SolverBase *& solver, std::string simulator_type,
                     clock_t main_clock_start, int start_run);
-
-  void RunRound(Evaluator * evaluator, DSPOMDP * model, int round);
 
   void PrintResult(int num_runs, Evaluator* simulator,
 				clock_t main_clock_start, std::string & result);

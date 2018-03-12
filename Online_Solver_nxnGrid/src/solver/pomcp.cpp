@@ -7,8 +7,8 @@
 
 using namespace std;
 
-namespace despot 
-{
+using namespace despot;
+
 
 /* =============================================================================
  * POMCPPrior class
@@ -135,86 +135,8 @@ ValuedAction POMCP::Search() {
 	return Search(Globals::config.time_per_move);
 }
 
-
-void POMCP::TreeDevelopThread(TreeThreadDataStruct * treeThreadData)
-{
-	bool notDone = true;
-
-	//while (notDone)
-	//{
-	//	vector<State*> particles = belief_->Sample(1000);
-	//	for (int i = 0; i < particles.size(); i++)
-	//	{
-	//		State* particle = particles[i];
-
-	//		// before simulating need to do step with qnode
-
-	//		Simulate(particle, root_, model_, prior_);
-	//		history_.Truncate(treeThreadData->m_histSize);
-
-	//		std::lock_guard<std::mutex> lock(treeThreadData->m_flagsMutex);
-	//		{
-	//			if (treeThreadData->m_terminal)
-	//			{
-	//				notDone = false;
-	//				break;
-	//			}
-	//		}
-	//	}
-
-	//	for (int i = 0; i < particles.size(); i++)
-	//	{
-	//		model_->Free(particles[i]);
-	//	}
-	//}
-}
-
-//ValuedAction POMCP::Search(ThreadDataStruct * threadData)
-//{
-//	// main data mutex
-//	std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
-//
-//	double searchStart = get_time_second();
-//
-//	if (root_ == NULL)
-//	{
-//		State* state = belief_->Sample(1)[0];
-//		root_ = CreateVNode(0, state, prior_, model_);
-//		model_->Free(state);
-//	}
-//
-//	int hist_size = history_.Size();
-//
-//	std::vector<TreeThreadDataStruct> firstChilds(model_->NumActions());
-//	std::vector<std::thread> firstChildsthreads;
-//
-//	auto threadFunc = std::bind(TreeDevelopThread, this);
-//	for (int a = 0; a < model_->NumActions(); ++a)
-//	{
-//		firstChilds[a].m_histSize = hist_size;
-//		firstChilds[a].m_terminal = false;
-//		const nxnGridGlobalActions model(*reinterpret_cast<const nxnGridGlobalActions *>(model_));
-//		std::thread thread(threadFunc, &firstChilds[a]);
-//		firstChildsthreads.emplace_back(std::move(thread));
-//	}
-//
-//	bool notDone = true;
-//
-//	while (notDone)
-//	{
-//
-//	}
-//
-//	ValuedAction astar = OptimalAction(root_);
-//	threadData->m_action = astar.action;
-//
-//	return astar;
-//}
-ValuedAction POMCP::Search(ThreadDataStruct * threadData)
-{
-	// main data mutex
-	std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
-	
+void POMCP::Search(TreeDevelopThread * threadData, int action)
+{	
 	double searchStart = get_time_second();
 
 	if (root_ == NULL) 
@@ -228,8 +150,6 @@ ValuedAction POMCP::Search(ThreadDataStruct * threadData)
 	int hist_size = history_.Size();
 	
 	bool notDone = true;
-
-
 	while (notDone)
 	{
 		vector<State*> particles = belief_->Sample(1000);
@@ -237,16 +157,15 @@ ValuedAction POMCP::Search(ThreadDataStruct * threadData)
 		{
 			State* particle = particles[i];
 
-			Simulate(particle, root_, model_, prior_);
+			Simulate(particle, root_, model_, prior_, action);
 			history_.Truncate(hist_size);
 
-			std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
+			std::lock_guard<std::mutex> lock(threadData->m_treeFlagsMutex);
+			if (!threadData->m_toDevelop || threadData->m_terminal)
 			{
-				if (threadData->m_actionNeeded || threadData->m_terminal)
-				{
-					notDone = false;
-					break;
-				}
+				notDone = false;
+				threadData->m_value = root_->Child(action)->value();
+				break;
 			}
 		}
 
@@ -256,10 +175,7 @@ ValuedAction POMCP::Search(ThreadDataStruct * threadData)
 		}
 	}
 
-	ValuedAction astar = OptimalAction(root_);
-	threadData->m_action = astar.action;
 
-	return astar;
 }
 
 void POMCP::belief(Belief* b) {
@@ -352,6 +268,7 @@ void POMCP::UpdateHistory(int action, OBS_TYPE obs)
 {
 	history_.Add(action, obs);
 	prior_->Add(action, obs);
+	belief_->Update(action, obs);
 }
 
 void POMCP::SendTree(State * state)
@@ -359,31 +276,56 @@ void POMCP::SendTree(State * state)
 	nxnGrid::SendTree(state , root_);
 }
 
-void POMCP::GetTreeProperties(std::vector<Tree_Properties> & childsProperties) const // NATAN CHANGES
+void POMCP::GetTreeProperties(Tree_Properties & treeProp) const // NATAN CHANGES
 {
 	if (root_ == NULL)
-	{
-		for (int i = 0; i < childsProperties.size(); ++i)
-			childsProperties[i] = Tree_Properties();
 		return;
-	}
 
-	for (int i = 0; i < childsProperties.size(); ++i)
+	int numChildren = root_->children().size();
+	treeProp.m_actionsChildren.resize(numChildren);
+	int rootSize = 0;
+	for (int a = 0; a < numChildren; ++a)
 	{
-		auto actionTree = root_->Child(i);
+		auto actionTree = root_->Child(a);
 
 		if (actionTree != nullptr)
 		{
-			childsProperties[i].m_nodeCount = actionTree->count();
-			childsProperties[i].m_nodeValue = actionTree->value();
-			childsProperties[i].m_size = actionTree->Size();
+			treeProp.m_actionsChildren[a].m_nodeCount = actionTree->count();
+			treeProp.m_actionsChildren[a].m_nodeValue = actionTree->value();
+			treeProp.m_actionsChildren[a].m_size = actionTree->Size();
+			rootSize += treeProp.m_actionsChildren[a].m_size;
 		}
 		else
 		{
-			childsProperties[i].m_nodeCount = 0;
-			childsProperties[i].m_nodeValue = 0;
-			childsProperties[i].m_size = 0;
+			treeProp.m_actionsChildren[a].m_nodeCount = 0;
+			treeProp.m_actionsChildren[a].m_nodeValue = 0;
+			treeProp.m_actionsChildren[a].m_size = 0;
 		}
+	}
+
+	treeProp.m_rootTreeProp.m_size = rootSize;
+	treeProp.m_rootTreeProp.m_nodeValue = root_->value();
+	treeProp.m_rootTreeProp.m_nodeCount = root_->count();
+}
+
+void POMCP::GetSingleActionTreeProp(SingleNodeTreeProp & treeProp, int action) const
+{
+	if (root_ == NULL)
+		return;
+
+	auto actionTree = root_->Child(action);
+
+	if (actionTree != nullptr)
+	{
+		treeProp.m_nodeCount = actionTree->count();
+		treeProp.m_nodeValue = actionTree->value();
+		treeProp.m_size = actionTree->Size();
+	}
+	else
+	{
+		treeProp.m_nodeCount = 0;
+		treeProp.m_nodeValue = 0;
+		treeProp.m_size = 0;
 	}
 }
 
@@ -484,11 +426,50 @@ double POMCP::Simulate(State* particle, RandomStreams& streams, VNode* vnode,
 	return reward;
 }
 
+
 // static
-double POMCP::Simulate(State* particle, VNode* vnode, const DSPOMDP* model,
-	POMCPPrior* prior) 
+double POMCP::Simulate(State* particle, VNode* vnode, const DSPOMDP* model, POMCPPrior* prior, int action)
 {
-	
+	assert(vnode != NULL);
+
+	if (vnode->depth() >= Globals::config.search_depth)
+		return 0;
+
+	double explore_constant = prior->exploration_constant();
+
+	double reward;
+	OBS_TYPE obs;
+	OBS_TYPE lastObs = prior->history().Size() > 0 ? prior->history().LastObservation() : nxnGrid::NonObservedState();
+
+	bool terminal = model->Step(*particle, action, lastObs, reward, obs);
+
+	QNode* qnode = vnode->Child(action);
+	if (!terminal) {
+		prior->Add(action, obs);
+		map<OBS_TYPE, VNode*>& vnodes = qnode->children();
+		if (vnodes[obs] != NULL)
+		{
+			reward += Globals::Discount() * Simulate(particle, vnodes[obs], model, prior);
+		}
+		else
+		{ // Rollout upon encountering a node not in curren tree, then add the node
+			vnodes[obs] = CreateVNode(vnode->depth() + 1, particle, prior,
+				model);
+			reward += Globals::Discount()
+				* Rollout(particle, vnode->depth() + 1, model, prior);
+		}
+		prior->PopLast();
+	}
+
+	qnode->Add(reward);
+	vnode->Add(reward);
+
+	return reward;
+}
+
+// static
+double POMCP::Simulate(State* particle, VNode* vnode, const DSPOMDP* model, POMCPPrior* prior) 
+{
 	assert(vnode != NULL);
 	
 	if (vnode->depth() >= Globals::config.search_depth)
@@ -500,7 +481,7 @@ double POMCP::Simulate(State* particle, VNode* vnode, const DSPOMDP* model,
 
 	double reward;
 	OBS_TYPE obs;
-	OBS_TYPE lastObs = prior->history().Size() > 0 ? prior->history().LastObservation() : particle->state_id;
+	OBS_TYPE lastObs = prior->history().Size() > 0 ? prior->history().LastObservation() : nxnGrid::NonObservedState();
 	bool terminal = model->Step(*particle, action, lastObs, reward, obs);
 
 	QNode* qnode = vnode->Child(action);
@@ -509,8 +490,7 @@ double POMCP::Simulate(State* particle, VNode* vnode, const DSPOMDP* model,
 		map<OBS_TYPE, VNode*>& vnodes = qnode->children();
 		if (vnodes[obs] != NULL) 
 		{
-			reward += Globals::Discount()
-				* Simulate(particle, vnodes[obs], model, prior);
+			reward += Globals::Discount() * Simulate(particle, vnodes[obs], model, prior);
 		} 
 		else 
 		{ // Rollout upon encountering a node not in curren tree, then add the node
@@ -567,7 +547,9 @@ double POMCP::Rollout(State* particle, int depth, const DSPOMDP* model,
 
 	double reward;
 	OBS_TYPE obs;
+
 	bool terminal = model->Step(*particle, action, prior->history().LastObservation(), reward, obs);
+
 	if (!terminal) {
 		prior->Add(action, obs);
 		reward += Globals::Discount() * Rollout(particle, depth + 1, model, prior);
@@ -726,5 +708,3 @@ void DPOMCP::Update(int action, OBS_TYPE obs) {
 		<< action << ", observation " << obs
 		<< " in " << (get_time_second() - start) << "s" << endl;
 }
-
-} // namespace despot

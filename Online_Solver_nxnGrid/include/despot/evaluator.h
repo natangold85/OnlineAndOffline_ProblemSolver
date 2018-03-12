@@ -64,7 +64,7 @@ class Evaluator {
 protected:
 	DSPOMDP* model_;
 	std::string belief_type_;
-	Solver* solver_;
+	SolverBase* solver_;
 	clock_t start_clockt_;
 	State* state_;
 	int step_;
@@ -80,11 +80,10 @@ protected:
 	std::vector<int> winsVec; // NATAN CHANGES
 
 public:
-	Evaluator(DSPOMDP* model, std::string belief_type, Solver* solver,
+	Evaluator(DSPOMDP* model, std::string belief_type, SolverBase * solver,
 		clock_t start_clockt, std::ostream* out);
 	virtual ~Evaluator();
 	
-	inline STATE_TYPE currStateId() { return state_->state_id; }
 	inline void out(std::ostream* o) {
 		out_ = o;
 	}
@@ -106,10 +105,10 @@ public:
 	inline void target_finish_time(double t) {
 		target_finish_time_ = t;
 	}
-	inline Solver* solver() {
+	inline SolverBase* solver() {
 		return solver_;
 	}
-	inline void solver(Solver* s) {
+	inline void solver(SolverBase* s) {
 		solver_ = s;
 	}
 	inline DSPOMDP* model() {
@@ -123,10 +122,12 @@ public:
 	}
 
 	virtual int Handshake(std::string instance) = 0; // Initialize simulator and return number of runs.
-	virtual void InitRound() = 0;
+	virtual void InitRound(bool isParallelSolver) = 0;
 
-	bool RunStep(ThreadDataStruct * threadData, int step);
+	void RunRoundForParallel(int round);
 	bool RunStep(int step, int round);
+	/// user play
+	void UserPlayRound();
 
 	virtual double EndRound() = 0; // Return total undiscounted reward for this round.
 	virtual bool ExecuteAction(int action, double& reward, OBS_TYPE& obs) = 0;
@@ -135,7 +136,7 @@ public:
 
 	virtual void UpdateTimePerMove(double step_time) = 0;
 
-	void GetTreeProperties(std::vector<Tree_Properties> & actionChildTreeProp){ ((POMCP *)solver_)->GetTreeProperties(actionChildTreeProp); }
+	void GetTreeProperties(Tree_Properties & treeProp) const { solver_->GetTreeProperties(treeProp); };
 
 	double AverageUndiscountedRoundReward() const;
 	double StderrUndiscountedRoundReward() const;
@@ -147,6 +148,7 @@ public:
 
 	void PrintFinalResults(std::string &buffer) const;
 	void PrintTreeProp(std::string &buffer) const;
+
 };
 
 /* =============================================================================
@@ -164,7 +166,7 @@ private:
 	std::string port_;
 
 public:
-	IPPCEvaluator(DSPOMDP* model, std::string belief_type, Solver* solver,
+	IPPCEvaluator(DSPOMDP* model, std::string belief_type, SolverBase * solver,
 		clock_t start_clockt, std::string hostname, std::string port, std::string log,
 		std::ostream* out);
 	~IPPCEvaluator();
@@ -178,7 +180,7 @@ public:
 	}
 
 	int Handshake(std::string instance);
-	void InitRound();
+	void InitRound(bool isParallelSolver) override;
 	double EndRound();
 	bool ExecuteAction(int action, double& reward, OBS_TYPE& obs);
 	// void ReportStepReward();
@@ -197,7 +199,7 @@ protected:
 	Random random_;
 
 public:
-	POMDPEvaluator(DSPOMDP* model, std::string belief_type, Solver* solver,
+	POMDPEvaluator(DSPOMDP* model, std::string belief_type, SolverBase * solver,
 		clock_t start_clockt, std::ostream* out, double target_finish_time = -1,
 		int num_steps = -1);
 	~POMDPEvaluator();
@@ -207,7 +209,7 @@ public:
 	}
 
 	int Handshake(std::string instance);
-	void InitRound();
+	void InitRound(bool isParallelSolver) override;
 	double EndRound();
 	bool ExecuteAction(int action, double& reward, OBS_TYPE& obs);
 	double End();

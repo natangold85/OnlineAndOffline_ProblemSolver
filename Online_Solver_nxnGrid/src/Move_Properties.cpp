@@ -1,10 +1,5 @@
 #include "Move_Properties.h"
-
-
-inline int Abs(int a)
-{
-	return a * (a >= 0) - a * (a < 0);
-}
+#include "Attacks.h"
 
 static int Distance(int loc1, int loc2, int gridSize)
 {
@@ -70,43 +65,99 @@ std::vector<std::string> Move_Properties::InitDirectionsNamesLUT()
 	return names;
 }
 
+bool Move_Properties::ValidMove(int move, const intVec & nonValidLocations)
+{
+	for (auto nonValLoc : nonValidLocations)
+	if (nonValLoc == move)
+		return false;
 
-void Move_Properties::GetRandomMoves(intVec & randomMoves, int objLocation, int gridSize)
+	return true;
+}
+
+void Move_Properties::GetRandomMoves(intVec & randomMoves, int objLocation, int gridSize, const intVec & nonValidLocations)
 {
 	Coordinate loc(objLocation % gridSize, objLocation / gridSize);
 	for (auto change : s_directionsLUT)
 	{
 		change += loc;
 		int changeLocation = change.GetIdx(gridSize);
-		if (change.ValidLocation(gridSize))
+		if (change.ValidLocation(gridSize) && ValidMove(changeLocation, nonValidLocations))
 			randomMoves.emplace_back(changeLocation);
 	}
 
 }
 
-int Move_Properties::MoveToTarget(int location, int target, int gridSize)
+int Move_Properties::MoveToTarget(int location, int target, int gridSize, const intVec & nonValidLocations)
 {
 	// assumption : target and location is inside grid and grid is square so move to target will allways be in grid
 	int xDiff = target % gridSize - location % gridSize;
 	int yDiff = target / gridSize - location / gridSize;
 
-	int changeToInsertX = xDiff != 0 ? xDiff / Abs(xDiff) : 0;
-	int changeToInsertY = yDiff != 0 ? (yDiff / Abs(yDiff)) * gridSize : 0;
+	int absXDiff = abs(xDiff);
+	int absYDiff = abs(yDiff);
+
+	int changeToInsertX = xDiff != 0 ? xDiff / absXDiff : 0;
+	int changeToInsertY = yDiff != 0 ? (yDiff / absYDiff) * gridSize : 0;
 
 	int bestMove = location + changeToInsertX + changeToInsertY;
+	
+	if (ValidMove(bestMove, nonValidLocations))
+		return bestMove;
 
-	return bestMove;
+
+	if (absXDiff > absYDiff)
+	{
+		bestMove = location + changeToInsertX;
+		if (ValidMove(bestMove, nonValidLocations))
+			return bestMove;
+		bestMove = location + changeToInsertY;
+		if (ValidMove(bestMove, nonValidLocations))
+			return bestMove;
+	}
+	else
+	{
+		bestMove = location + changeToInsertY;
+		if (ValidMove(bestMove, nonValidLocations))
+			return bestMove;
+		bestMove = location + changeToInsertX;
+		if (ValidMove(bestMove, nonValidLocations))
+			return bestMove;
+	}
+
+	return location;
+}
+
+void Move_Properties::SpawnObj(int gridSize, double probToSpawn, const intVec & nonValidLocations, std::map<int, double> & possibleLocations)
+{
+	int numOfPoints = gridSize * 4 - 4;
+	double specificProb2Spawn = probToSpawn / numOfPoints;
+
+	int north = 0;
+	int south = gridSize * (gridSize - 1);
+	int west = 0;
+	int east = gridSize - 1;
+	for (; north < gridSize; ++north, ++south, east += gridSize, west += gridSize)
+	{
+		if (ValidMove(north, nonValidLocations))
+			possibleLocations[north] = specificProb2Spawn;
+		if (ValidMove(south, nonValidLocations))
+			possibleLocations[south] = specificProb2Spawn;
+		if (ValidMove(east, nonValidLocations))
+			possibleLocations[east] = specificProb2Spawn;
+		if (ValidMove(west, nonValidLocations))
+			possibleLocations[west] = specificProb2Spawn;
+	}
 }
 
 SimpleMoveProperties::SimpleMoveProperties(double pSuccess)
 : m_pSuccess(pSuccess)
 {}
 
-void SimpleMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
+void SimpleMoveProperties::GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const
 {	
-	int targetMove = MoveToTarget(location, target, gridSize);
+	int targetMove = MoveToTarget(location, target, gridSize, nonValidLocations);
 
-	if (targetMove >= 0)
+	if (targetMove != location)
 	{
 		possibleLocations[targetMove] = m_pSuccess;
 		possibleLocations[location] = 1 - m_pSuccess;
@@ -128,17 +179,17 @@ GeneralDirectionMoveProperties::GeneralDirectionMoveProperties(double pSuccess, 
 , m_pDirectDiagonalSuccess(pDirectDiagonalSuccess)
 {}
 
-void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
+void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const
 {
-	int targetMove = MoveToTarget(location, target, gridSize);
+	int targetMove = MoveToTarget(location, target, gridSize, nonValidLocations);
 
-	if (targetMove >= 0)
+	if (targetMove != location)
 	{
 		Coordinate target(targetMove % gridSize, targetMove / gridSize);
 		Coordinate objLoc(location % gridSize, location / gridSize);
 		
 		Coordinate diff = objLoc - target;
-		int allDiff = Abs(diff.X()) + Abs(diff.Y());
+		int allDiff = abs(diff.X()) + abs(diff.Y());
 
 		if (allDiff == 1)
 		{ // straight move
@@ -146,7 +197,7 @@ void GeneralDirectionMoveProperties::GetPossibleMoves(int location, int gridSize
 			int diagonalSecond = location;
 			double pGeneralDirection = m_pSuccess - m_pDirectStraightSuccess;
 
-			if (Abs(diff.X()) > 0)
+			if (abs(diff.X()) > 0)
 			{ // change in y for mistakes
 				// if move is valid insert it to move
 				Coordinate changes(target);
@@ -210,7 +261,7 @@ LowLevelMoveProperties::LowLevelMoveProperties(double pSuccess)
 : m_pSuccess(pSuccess)
 {}
 
-void LowLevelMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
+void LowLevelMoveProperties::GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const
 {
 	possibleLocations[target] = m_pSuccess;
 	possibleLocations[location] = 1 - m_pSuccess;
@@ -231,20 +282,31 @@ TargetDerivedMoveProperties::TargetDerivedMoveProperties()
 {
 }
 
-TargetDerivedMoveProperties::TargetDerivedMoveProperties(double stay, double towardTarget)
+TargetDerivedMoveProperties::TargetDerivedMoveProperties(double stay, double towardTarget, double pToSpawnIfDead)
 	: m_pRandomMove(1 - stay - towardTarget)
 	, m_pStay(stay)
 	, m_pTowardTarget(towardTarget)
+	, m_pToSpawnIfDead(pToSpawnIfDead)
+
 {
 }
 
-void TargetDerivedMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
+void TargetDerivedMoveProperties::GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const
 {
+	if (Attack::IsDead(location, gridSize))
+	{
+		if (m_pToSpawnIfDead > 0)
+			SpawnObj(gridSize, m_pToSpawnIfDead, nonValidLocations, possibleLocations);
+
+		possibleLocations[location] = 1 - m_pToSpawnIfDead;
+		return;
+	}
+
 	double pStay = m_pStay;
-	int targetMove = MoveToTarget(location, target, gridSize);
+	int targetMove = MoveToTarget(location, target, gridSize, nonValidLocations);
 
 	// if move is possible insert it to result and consider it as blocking location else add its prob to stay
-	if (targetMove >= 0)
+	if (targetMove  != location)
 		possibleLocations[targetMove] = m_pTowardTarget;
 	else
 		pStay += m_pTowardTarget;
@@ -255,13 +317,11 @@ void TargetDerivedMoveProperties::GetPossibleMoves(int location, int gridSize, s
 		return;
 
 	intVec randomMoves;
-	GetRandomMoves(randomMoves, location, gridSize);
+	GetRandomMoves(randomMoves, location, gridSize, nonValidLocations);
 
 	double pForEach = m_pRandomMove / randomMoves.size();
 	for (auto move : randomMoves)
 		possibleLocations[move] += pForEach;
-
-	// return blocking objects to its regular size
 }
 
 std::string TargetDerivedMoveProperties::String() const
@@ -272,17 +332,25 @@ std::string TargetDerivedMoveProperties::String() const
 	return ret;
 }
 
-NaiveMoveProperties::NaiveMoveProperties(double stay)
+NaiveMoveProperties::NaiveMoveProperties(double stay, double pToSpawnIfDead)
 : m_pRandomMove(1 - stay)
 , m_pStay(stay)
+, m_pToSpawnIfDead(pToSpawnIfDead)
 {}
 
-void NaiveMoveProperties::GetPossibleMoves(int location, int gridSize, std::map<int, double> & possibleLocations, int target) const
+void NaiveMoveProperties::GetPossibleMoves(int location, int gridSize, const intVec & nonValidLocations, std::map<int, double> & possibleLocations, int target) const
 {
+	if (Attack::IsDead(location, gridSize))
+	{
+		if (m_pToSpawnIfDead > 0)
+			SpawnObj(gridSize, m_pToSpawnIfDead, nonValidLocations, possibleLocations);
+		return;
+	}
+
 	possibleLocations[location] = m_pStay;
 
 	intVec randomMoves;
-	GetRandomMoves(randomMoves, location, gridSize);
+	GetRandomMoves(randomMoves, location, gridSize, nonValidLocations);
 
 	double pForEach = m_pRandomMove / randomMoves.size();
 	for (auto move : randomMoves)

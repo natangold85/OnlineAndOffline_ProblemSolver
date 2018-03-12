@@ -8,18 +8,6 @@
 
 namespace despot 
 {
-
-/// changes surrounding a point
-static const int s_numMoves = 8;
-static const int s_lutDirections[s_numMoves][2] = { { 0,1 },{ 0,-1 },{ 1,0 },{ -1,0 },{ 1,1 },{ 1,-1 },{ -1,1 },{ -1,-1 } };
-
-/// second square changes surrounding the point
-static const int s_numPixelsSecondSquare = 16;
-static const int s_lutSecondSquare[s_numPixelsSecondSquare][2] = { { 0, 2 }, { 0, -2 }, { 2, 0 }, { -2, 0 },
-																{ 1, 2 }, { 1, -2 }, { 2, 1 }, { -2, 1 },
-																{ -1, 2 }, { -1, -2 }, { 2, -1 }, { -2, -1 },															
-																{ 2, 2 }, { 2, -2 }, { -2, 2 }, { -2, -2 } };
-
 // prams for tree sending
 enum TREE_SEND_PARAMS { END_TREE, START_NEW_TRIAL, START_NEW_STEP, END_RUN };
 
@@ -47,7 +35,6 @@ bool nxnGrid::s_resampleFromLastObs = true;
 bool nxnGrid::s_isExternalSimulator = false;
 bool nxnGrid::s_toSendTree = false;
 
-
 std::vector<nxnGrid::intVec> nxnGrid::s_objectsInitLocations;
 
 UDP_Server nxnGrid::s_udpVBS;
@@ -63,11 +50,15 @@ const double nxnGrid::REWARD_MIN = min(REWARD_LOSS, REWARD_ILLEGAL_MOVE);
 const double nxnGrid::REWARD_STEP = 0;
 const double nxnGrid::REWARD_FIRE = 0;
 
+OBS_TYPE nxnGrid::s_nonObservedState = 0;
 
 // for lut
 nxnGrid::lut_t nxnGrid::s_LUT;
 enum nxnGrid::CALCULATION_TYPE nxnGrid::s_calculationType = nxnGrid::WITHOUT;
 
+// for memory allocating
+std::mutex nxnGrid::s_memoryMutex;
+MemoryPool<nxnGridState> nxnGrid::memory_pool_;
 
 /* =============================================================================
 * inline Functions
@@ -186,6 +177,11 @@ STATE_TYPE DetailedState::GetStateId() const
 	}
 
 	return stateId;
+}
+
+OBS_TYPE DetailedState::GetObsId() const
+{
+	return static_cast<OBS_TYPE>(GetStateId());
 }
 
 double DetailedState::ObsProb(STATE_TYPE state_id, OBS_TYPE obs, int gridSize, const Observation & obsType)
@@ -311,6 +307,15 @@ void DetailedState::EraseObject(int objectIdx)
 	m_locations.erase(m_locations.begin() + objectIdx);
 }
 
+bool DetailedState::IsProtected(int objIdx) const
+{
+	bool ret = false;
+	for (auto shelter : s_shelters)
+		ret |= shelter == m_locations[objIdx];
+
+	return ret;
+}
+
 std::string DetailedState::text() const
 {
 	std::string ret = "(";
@@ -356,6 +361,15 @@ bool DetailedState::IsNonInvDead(int gridSize) const
 	return anyDead;
 }
 
+//bool DetailedState::NonValidState() const
+//{
+//	for (auto loc : m_locations)
+//	{
+//		if (loc > Observation::NonObservedLoc(s_gridSize) || loc < 0)
+//			return true;
+//	}
+//	return false;
+//}
 /* =============================================================================
 * nxnGrid Functions
 * =============================================================================*/
@@ -435,6 +449,7 @@ std::vector<State*> nxnGrid::ResampleLastObs(int num, const std::vector<State*>&
 	std::vector<std::vector<std::pair<int, double>>> objLocations(modelCast->CountMovingObjects());
 
 
+	int nonObservedLoc = Observation::NonObservedLoc(modelCast->GetGridSize());
 	// to get num particles need to take from each observed object nth root of num particles
 	double numObjLocations = pow(num, 1.0 / (modelCast->CountMovingObjects() - 1));
 	// insert self location (is known)
@@ -443,16 +458,17 @@ std::vector<State*> nxnGrid::ResampleLastObs(int num, const std::vector<State*>&
 	for (int obj = 1; obj < modelCast->CountMovingObjects(); ++obj)
 	{
 		int startSim = history.Size();
-		int loc = -1;
+		
+		int loc = nonObservedLoc;
 
 		// running on all history and search for the last time observed the object
-		for (; startSim > 0 & loc < 0; --startSim)
+		for (; startSim > 0 & loc == nonObservedLoc; --startSim)
 			loc = DetailedState::GetObservedObjLocation(history.Observation(startSim - 1), obj);
 
 		State* observedLoc = nullptr;
 
 		// if we observe the object remember state as initial condition
-		if (loc >= 0)
+		if (loc != nonObservedLoc)
 		{
 			observedLoc = model->Allocate(history.Observation(startSim), 1.0);
 			++startSim;  // start simulate step after the observation
@@ -479,7 +495,7 @@ std::vector<State*> nxnGrid::ResampleLastObs(int num, const std::vector<State*>&
 				mass += unit;
 
 				particle = model->Copy(belief[pos]);
-				prevObs = 0;
+				prevObs = NonObservedState();
 			}
 			else
 			{
@@ -645,7 +661,9 @@ unsigned int nxnGrid::SendTreeRec(QNode *node, unsigned int parentId, unsigned i
 void nxnGrid::AddObj(Attack_Obj&& obj)
 {
 	m_enemyVec.emplace_back(std::forward<Attack_Obj>(obj));
+	
 	DetailedState::s_numEnemies = m_enemyVec.size();
+	s_nonObservedState = GetNonObservedState();
 
 	AddActionsToEnemy();
 }
@@ -653,14 +671,19 @@ void nxnGrid::AddObj(Attack_Obj&& obj)
 void nxnGrid::AddObj(Movable_Obj&& obj)
 {
 	m_nonInvolvedVec.emplace_back(std::forward<Movable_Obj>(obj));
+
 	DetailedState::s_numNonInvolved = m_nonInvolvedVec.size();
+	s_nonObservedState = GetNonObservedState();
+
 }
 
 void nxnGrid::AddObj(ObjInGrid&& obj)
 {
 	m_shelters.emplace_back(std::forward<ObjInGrid>(obj));
-	DetailedState::s_shelters.emplace_back(obj.GetLocation().GetIdx(m_gridSize));
 	
+	DetailedState::s_shelters.emplace_back(obj.GetLocation().GetIdx(m_gridSize));
+	s_nonObservedState = GetNonObservedState();
+
 	AddActionsToShelter();
 }
 
@@ -673,6 +696,17 @@ double nxnGrid::ObsProb(OBS_TYPE obs, const State & s, int action) const
 double nxnGrid::ObsProbOneObj(OBS_TYPE obs, const State & s, int action, int objIdx) const
 {
 	return DetailedState::ObsProbOneObj(s.state_id, obs, objIdx, m_gridSize, *m_self.GetObservation());
+}
+
+OBS_TYPE nxnGrid::GetNonObservedState() const
+{
+	unsigned int numObjInState = CountMovingObjects();
+	DetailedState nonObservedState(numObjInState);
+	
+	for (int o = 0; o < numObjInState; ++o)
+		nonObservedState[o] = Observation::NonObservedLoc(m_gridSize);
+
+	return nonObservedState.GetObsId();
 }
 
 void nxnGrid::CreateParticleVec(std::vector<std::vector<std::pair<int, double> > > & objLocations, std::vector<State*> & particles) const
@@ -857,7 +891,12 @@ Belief * nxnGrid::InitialBelief(const State * start, std::string type) const
 
 State * nxnGrid::Allocate(STATE_TYPE state_id, double weight) const
 {
-	nxnGridState* particle = memory_pool_.Allocate();
+	nxnGridState* particle = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(s_memoryMutex);
+		particle = memory_pool_.Allocate();
+	}
+
 	particle->state_id = state_id;
 	particle->weight = weight;
 	return particle;
@@ -865,7 +904,12 @@ State * nxnGrid::Allocate(STATE_TYPE state_id, double weight) const
 
 State * nxnGrid::Copy(const State * particle) const
 {
-	nxnGridState* new_particle = memory_pool_.Allocate();
+	nxnGridState* new_particle = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(s_memoryMutex);
+		new_particle = memory_pool_.Allocate();
+	}
+
 	*new_particle = *static_cast<const nxnGridState*>(particle);
 	new_particle->SetAllocated();
 	return new_particle;
@@ -873,6 +917,7 @@ State * nxnGrid::Copy(const State * particle) const
 
 void nxnGrid::Free(State * particle) const
 {
+	std::lock_guard<std::mutex> lock(s_memoryMutex);
 	memory_pool_.Free(static_cast<nxnGridState*>(particle));
 }
 
@@ -1120,16 +1165,12 @@ void nxnGrid::SetNextPosition(DetailedState & state, doubleVec & randomNum) cons
 	// run on all enemies
 	for (int i = 0; i < m_enemyVec.size(); ++i)
 	{
-		// if the object is not dead calc movement
-		if (!Attack::IsDead(state[i + 1], m_gridSize))
-			CalcMovement(state, &m_enemyVec[i], randomNum[i], i + 1);
+		CalcMovement(state, &m_enemyVec[i], randomNum[i], i + 1);
 	}
 	// run on all non-involved non-involved death is the end of game so don't need to check for death
 	for (int i = 0; i < m_nonInvolvedVec.size(); ++i)
 	{
-		// if the object is not dead calc movement
-		if (!Attack::IsDead(state[i + 1 + m_enemyVec.size()], m_gridSize))
-			CalcMovement(state, &m_nonInvolvedVec[i], randomNum[i + m_enemyVec.size()], i + 1 + m_enemyVec.size());
+		CalcMovement(state, &m_nonInvolvedVec[i], randomNum[i + m_enemyVec.size()], i + 1 + m_enemyVec.size());
 	}
 }
 
@@ -1137,7 +1178,9 @@ void nxnGrid::CalcMovement(DetailedState & state, const Movable_Obj *object, dou
 {
 	// if the p that was pulled is in the pStay range do nothing
 	std::map<int, double> possibleLocations;
-	object->GetMovement()->GetPossibleMoves(state[objIdx], m_gridSize, possibleLocations, state[0]);
+	intVec nonValidLocations;
+	GetNonValidLocations(state, objIdx, nonValidLocations);
+	object->GetMovement()->GetPossibleMoves(state[objIdx], m_gridSize, nonValidLocations, possibleLocations, state[0]);
 
 	int loc = -1;
 	for (auto v : possibleLocations)
@@ -1274,7 +1317,7 @@ void nxnGrid::CreateRandomVec(doubleVec & randomVec, int size)
 	// insert to a vector numbers between 0-1
 	for (int i = 0; i < size; ++i)
 	{
-		randomVec.emplace_back(Random::RANDOM.NextDouble());
+		randomVec.emplace_back(RandomNum());
 	}
 }
 
@@ -1568,6 +1611,15 @@ intVec nxnGrid::GetSheltersVec() const
 		shelters.emplace_back(v.GetLocation().GetIdx(m_gridSize));
 
 	return shelters;
+}
+
+void nxnGrid::GetNonValidLocations(const DetailedState & state, int objIdx, intVec & nonValLoc) const
+{
+	for (int obj = 0; obj < CountMovingObjects(); ++obj)
+	{
+		if (obj != objIdx && state.IsProtected(obj))
+			nonValLoc.emplace_back(state[obj]);
+	}
 }
 
 } //end ns despot

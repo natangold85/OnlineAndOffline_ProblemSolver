@@ -5,8 +5,6 @@
 #include "../core/node.h"
 #include "../core/globals.h"
 
-//#include "../../../include/despot/evaluator.h" // NATAN CHANGES
-#include "..\..\..\src\Tree_Properties.h"
 
 namespace despot {
 
@@ -101,24 +99,27 @@ public:
 	POMCP(const DSPOMDP* model, POMCPPrior* prior, Belief* belief = NULL);
 	virtual ValuedAction Search();
 	virtual ValuedAction Search(double timeout);
-	
-	virtual ValuedAction Search(ThreadDataStruct * threadData) override;
-	
-	void TreeDevelopThread(TreeThreadDataStruct * treeThreadData);
+	virtual void Search(TreeDevelopThread * threadData, int action) override;
 
+	inline VNode* root() const { return root_; };
 
 	void reuse(bool r);
 	virtual void belief(Belief* b);
 	virtual void Update(int action, OBS_TYPE obs);
 
-	POMCPPrior* GetPrior() { return prior_; }; //NATAN CHANGES
-	void GetTreeProperties(std::vector<Tree_Properties> & childsProperties) const; // NATAN CHANGES
-	void SaveTreeInFile(std::ofstream & out) const; // NATAN CHANGES
+	POMCPPrior* GetPrior() { return prior_; };
+	History * GetHistory() { return &history_; };
+
+	virtual void GetTreeProperties(Tree_Properties & treeProp) const override;
+	virtual void GetSingleActionTreeProp(SingleNodeTreeProp & treeProp, int action) const override;
+
+	void SaveTreeInFile(std::ofstream & out) const;
 
 	static VNode* CreateVNode(int depth, const State*, POMCPPrior* prior,
 		const DSPOMDP* model);
-	static double Simulate(State* particle, VNode* root, const DSPOMDP* model,
-		POMCPPrior* prior);
+	static double Simulate(State* particle, VNode* root, const DSPOMDP* model, POMCPPrior* prior);
+	static double Simulate(State* particle, VNode* root, const DSPOMDP* model, POMCPPrior* prior, int firstAction);
+
 	static double Simulate(State* particle, RandomStreams& streams,
 		VNode* vnode, const DSPOMDP* model, POMCPPrior* prior);
 	static double Rollout(State* particle, int depth, const DSPOMDP* model,

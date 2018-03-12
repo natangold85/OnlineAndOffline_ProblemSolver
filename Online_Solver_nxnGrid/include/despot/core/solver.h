@@ -5,6 +5,7 @@
 #include "../core/history.h"
 
 #include "..\..\..\src\ThreadDataClass.h"
+#include "..\..\..\src\Tree_Properties.h"
 
 namespace despot {
 
@@ -37,11 +38,27 @@ struct SearchStatistics {
 	friend std::ostream& operator<<(std::ostream& os, const SearchStatistics& statitics);
 };
 
+class SolverBase
+{
+public:
+	virtual void Search(TreeDevelopThread * threadData, int action)  = 0;
+	virtual ValuedAction Search() = 0;
+
+	virtual void Update(int action, OBS_TYPE obs) = 0;
+	virtual void UpdateHistory(int action, OBS_TYPE obs) = 0;
+
+	virtual void GetTreeProperties(Tree_Properties & treeProp) const = 0;
+
+	virtual void belief(Belief* b) = 0;
+	virtual Belief* belief() = 0;
+	virtual void DeleteBelief() = 0;
+};
 /* =============================================================================
  * Solver class
  * =============================================================================*/
 
-class Solver {
+class Solver: public SolverBase 
+{
 protected:
 	const DSPOMDP* model_;
 	Belief* belief_;
@@ -57,7 +74,10 @@ public:
 	 * value is not to be used.
 	 */
 	virtual ValuedAction Search() = 0;
-	virtual ValuedAction Search(ThreadDataStruct * threadData);
+	
+	virtual void Search(TreeDevelopThread * threadData, int action) {};
+	virtual void GetTreeProperties(Tree_Properties & treeProp) const {};
+	virtual void GetSingleActionTreeProp(SingleNodeTreeProp & treeProp, int action) const {};
 
 	/**
 	 * Update current belief, history, and any other internal states that is
@@ -72,6 +92,57 @@ public:
 	 */
 	virtual void belief(Belief* b);
 	Belief* belief();
+
+	virtual void DeleteBelief();
+
+};
+
+// in order for solver to run parallel it has to have copy ctor
+class ParallelSolver : public SolverBase
+{
+public:
+	ParallelSolver(std::vector<Solver *> solver, int numActions);
+	
+	ParallelSolver(const ParallelSolver & solv) = delete;
+	ParallelSolver & operator=(const ParallelSolver & solv) = delete;
+
+	void ThreadsMngrFunction();
+	void TreeThreadsMainFunction(int action);
+
+	virtual void GetTreeProperties(Tree_Properties & treeProp) const override;
+
+	virtual ValuedAction Search() override;
+	
+	virtual void Update(int action, OBS_TYPE obs) override;
+	virtual void UpdateHistory(int action, OBS_TYPE obs);
+
+	virtual void belief(Belief* b) override;
+	virtual void belief(Belief* b, int idxSolver);
+	virtual Belief* belief() override;
+	virtual void DeleteBelief() override;
+
+	virtual void Search(TreeDevelopThread * threadData, int action) {};
+
+	TreeMngrThread & GetTreeMngrData() { return mngrData_; };
+	
+
+	int NumSolvers() const {return solvers_.size(); };
+
+private:
+	void StartRoundMngr();
+	void EndRoundMngr();
+
+
+	ValuedAction FindPrefferedAction();
+
+	TreeMngrThread mngrData_;
+
+	std::vector<Solver *> solvers_;
+	std::vector<TreeDevelopThread> threadsData_;
+	std::vector<std::thread> threads_;
+
+	std::mutex barrierMutex_;
+	int barrierCounter_;
 };
 
 } // namespace despot

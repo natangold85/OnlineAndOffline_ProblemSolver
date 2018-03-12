@@ -8,10 +8,14 @@ namespace despot
 {
 
 
-struct ThreadDataStruct
+struct TreeMngrThread
 {
-	// is void because of inner dependencies in algorithm of solvers
-	void * m_evaluator;
+	TreeMngrThread()
+	: m_action(-1), m_lastObservation(-1), m_actionNeeded(false), m_terminal(false), m_observationRecieved(false), m_actionRecieved(false)
+	{}
+
+	TreeMngrThread(const TreeMngrThread &) = delete;
+	TreeMngrThread &operator=(const TreeMngrThread &) = delete;
 
 	std::mutex m_mainMutex;
 	std::mutex m_flagsMutex;
@@ -25,13 +29,25 @@ struct ThreadDataStruct
 	int m_action;
 };
 
-struct TreeThreadDataStruct
+struct TreeDevelopThread
 {
-	// is void because of inner dependencies in algorithm of solvers
-	void * actionChild;
-	void * solver;
+	TreeDevelopThread()
+	: m_toDevelop(false)
+	, m_toUpdate(false)
+	, m_terminal(false)
+	{};
 
-	std::mutex m_flagsMutex;
+	TreeDevelopThread(const TreeDevelopThread &) = delete;
+	TreeDevelopThread &operator=(const TreeDevelopThread &) = delete;
+
+	std::mutex m_treeFlagsMutex;
+	
+	int m_actionToUpdate;
+	OBS_TYPE m_obsToUpdate;
+	float m_value;
+
+	bool m_toDevelop;
+	bool m_toUpdate;
 	bool m_terminal;
 };
 

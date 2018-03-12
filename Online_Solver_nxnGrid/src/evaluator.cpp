@@ -130,7 +130,7 @@ double EvalLog::GetRemainingBudget(string instance) const {
  * Evaluator class
  * =============================================================================*/
 
-Evaluator::Evaluator(DSPOMDP* model, string belief_type, Solver* solver,
+Evaluator::Evaluator(DSPOMDP* model, string belief_type, SolverBase * solver,
 	clock_t start_clockt, ostream* out) :
 	model_(model),
 	belief_type_(belief_type),
@@ -141,45 +141,77 @@ Evaluator::Evaluator(DSPOMDP* model, string belief_type, Solver* solver,
 {
 }
 
-Evaluator::~Evaluator() {
+Evaluator::~Evaluator()
+{
 }
 
-
-bool Evaluator::RunStep(ThreadDataStruct * threadData, int step) 
+void Evaluator::RunRoundForParallel(int round)
 {
-	// search for action
-	bool observationRecieved = false;
+	ParallelSolver *ptr = reinterpret_cast<ParallelSolver *>(solver_);
+	std::thread treeMngr([ptr] { ptr->ThreadsMngrFunction(); });
+
+	TreeMngrThread & treeMngrData = ptr->GetTreeMngrData();
+	Tree_Properties treeProp(model_->NumActions());
 	bool terminal = false;
 
-	// build tree (exit when action is needed)
-	solver_->Search(threadData);
-
-	{	//  update flags to after action found
-		std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
-		threadData->m_observationRecieved = false;
-		threadData->m_actionNeeded = false;
-		threadData->m_actionRecieved = true;
-		terminal = threadData->m_terminal;
-	}
-
-	if (terminal)
-		return true;
-
-	while (!observationRecieved)
+	for (int step = 0; step < Globals::config.sim_len && !terminal; ++step)
 	{
-		std::lock_guard<std::mutex> lock(threadData->m_flagsMutex);
-		observationRecieved = threadData->m_observationRecieved;
-		terminal = threadData->m_terminal;
+		Sleep(Globals::config.time_per_move * 1000);
+		// inform to builder that action is needed
+		{
+			std::lock_guard<std::mutex> lock(treeMngrData.m_flagsMutex);
+			treeMngrData.m_actionNeeded = true;
+		}
+		// wait for action is ready
+		bool actionRecieved = false;
+		while (!actionRecieved)
+		{
+			std::lock_guard<std::mutex> lock(treeMngrData.m_flagsMutex);
+			actionRecieved = treeMngrData.m_actionRecieved;
+		}
+
+		int action = -1;
+		double reward;
+		OBS_TYPE obs;
+		State currState;
+
+		{ // take action and update observation
+			std::lock_guard<std::mutex> mainLock(treeMngrData.m_mainMutex);
+			action = treeMngrData.m_action;
+
+			nxnGrid::UpdateRealAction(action);
+
+			terminal = ExecuteAction(action, reward, obs);
+			currState.state_id = state_->state_id;
+
+			GetTreeProperties(treeProp);
+
+			treeMngrData.m_lastObservation = obs;
+			std::lock_guard<std::mutex> flagsLock(treeMngrData.m_flagsMutex);
+			treeMngrData.m_observationRecieved = true;
+			treeMngrData.m_actionRecieved = false;
+		}
+
+		// print data
+		std::cout << "- Tree Properties: (size,count,value)\n" << treeProp.text() << "\n";
+
+		std::cout << "- Action = ";
+		model_->PrintAction(action);
+		std::cout << "- Current State: : ";
+		model_->PrintState(currState);
+		std::cout << "- Observation: : ";
+		model_->PrintObs(currState, obs);
+		std::cout << "- ObsProb = " << model_->ObsProb(obs, currState, action) << "\n";
+
+		std::cout << "\n- StepReward = " << reward << "\n\n\n";
 	}
 
-	{
-		std::lock_guard<std::mutex> lock(threadData->m_mainMutex);
-	
-		// update if not terminal
-		if (!terminal)
-			solver_->Update(threadData->m_action, threadData->m_lastObservation);
+	{ // inform to builder that round is over
+		std::lock_guard<std::mutex> lock(treeMngrData.m_flagsMutex);
+		treeMngrData.m_terminal = true;
 	}
-	return terminal;
+
+	treeMngr.join();
 }
 
 bool Evaluator::RunStep(int step, int round) {
@@ -243,14 +275,11 @@ bool Evaluator::RunStep(int step, int round) {
 	start_t = get_time_second();
 
 	// gathering tree properties
-	std::vector<Tree_Properties> actionsTreeData(model_->NumActions());
+	Tree_Properties actionsTreeData(model_->NumActions());
 	GetTreeProperties(actionsTreeData);
+		
 
-	std::cout << "- Tree Properties: (size,count,value)\n";
-	for (auto actionProp : actionsTreeData)
-	{
-		std::cout << actionProp.m_size << ", " << actionProp.m_nodeCount << ", " << actionProp.m_nodeValue << "\n";
-	}
+	std::cout << "- Tree Properties: (size,count,value)\n" << actionsTreeData.text() << "\n";
 
 	if (!Globals::config.silence && out_) {
 		*out_ << "- Action = ";
@@ -318,6 +347,32 @@ bool Evaluator::RunStep(int step, int round) {
 	return false;
 }
 
+void Evaluator::UserPlayRound()
+{
+	bool terminal = false;
+	while (!terminal)
+	{
+		int action = -1;
+		double reward;
+		OBS_TYPE obs;
+
+		std::cout << "Enter Action(0 - moveToTarget, 1 - moveToShelter, 2 - attack)\n";
+		std::cin >> action;
+		terminal = ExecuteAction(action, reward, obs);
+
+		std::cout << "- Action = ";
+		model_->PrintAction(action);
+		std::cout << "- Current State: : ";
+		model_->PrintState(*state_);
+		std::cout << "- Observation: : ";
+		model_->PrintObs(*state_, obs);
+		std::cout << "- ObsProb = " << model_->ObsProb(obs, *state_, action) << "\n";
+
+		std::cout << "\n- StepReward = " << reward << "\n\n\n";
+
+		solver_->UpdateHistory(action, obs);
+	}
+}
 double Evaluator::AverageUndiscountedRoundReward() const {
 	double sum = 0;
 	for (int i = 0; i < undiscounted_round_rewards_.size(); i++) {
@@ -450,7 +505,7 @@ void Evaluator::ReportStepReward() {
  * IPPCEvaluator class
  * =============================================================================*/
 
-IPPCEvaluator::IPPCEvaluator(DSPOMDP* model, string belief_type, Solver* solver,
+IPPCEvaluator::IPPCEvaluator(DSPOMDP* model, string belief_type, SolverBase * solver,
 	clock_t start_clockt, string hostname, string port, string log,
 	ostream* out) :
 	Evaluator(model, belief_type, solver, start_clockt, out),
@@ -508,7 +563,7 @@ int IPPCEvaluator::Handshake(string instance) {
 	return num_remaining_runs;
 }
 
-void IPPCEvaluator::InitRound() {
+void IPPCEvaluator::InitRound(bool isParallelSolver) {
 	step_ = 0;
 	state_ = NULL;
 
@@ -522,12 +577,26 @@ void IPPCEvaluator::InitRound() {
 		<< (end_t - start_t) << "s" << endl;
 
 	start_t = get_time_second();
-	Belief* belief = model_->InitialBelief(NULL, belief_type_);
-	end_t = get_time_second();
-	logi << "[IPPCEvaluator::InitRound] Initialized initial belief: "
-		<< typeid(*belief).name() << " in " << (end_t - start_t) << "s" << endl;
+	
+	if (isParallelSolver)
+	{	// create belief for all solvers
+		ParallelSolver * parSolver = dynamic_cast<ParallelSolver *>(solver_);
+		for (int sol = 0; sol < parSolver->NumSolvers(); ++sol)
+		{
+			Belief* belief = model_->InitialBelief(NULL, belief_type_);
+			parSolver->belief(belief, sol);
+		}
+	}
+	else
+	{
 
-	solver_->belief(belief);
+		Belief* belief = model_->InitialBelief(NULL, belief_type_);
+		end_t = get_time_second();
+		logi << "[IPPCEvaluator::InitRound] Initialized initial belief: "
+			<< typeid(*belief).name() << " in " << (end_t - start_t) << "s" << endl;
+		solver_->belief(belief);
+	}
+
 
 	// Initiate a round with server
 	start_t = get_time_second();
@@ -678,7 +747,7 @@ void IPPCEvaluator::UpdateTimePerMove(double step_time) {
  * =============================================================================*/
 
 POMDPEvaluator::POMDPEvaluator(DSPOMDP* model, string belief_type,
-	Solver* solver, clock_t start_clockt, ostream* out,
+	SolverBase * solver, clock_t start_clockt, ostream* out,
 	double target_finish_time, int num_steps) :
 	Evaluator(model, belief_type, solver, start_clockt, out),
 	random_((unsigned) 0) {
@@ -699,7 +768,7 @@ int POMDPEvaluator::Handshake(string instance) {
 	return -1; // Not to be used
 }
 
-void POMDPEvaluator::InitRound() {
+void POMDPEvaluator::InitRound(bool isParallelSolver) {
 	step_ = 0;
 
 	double start_t, end_t;
@@ -714,19 +783,33 @@ void POMDPEvaluator::InitRound() {
 
 	// Initial belief
 	start_t = get_time_second();
-	delete solver_->belief();
+
+	solver_->DeleteBelief();
+
 	end_t = get_time_second();
 	logi << "[POMDPEvaluator::InitRound] Deleted old belief in "
 		<< (end_t - start_t) << "s" << endl;
 
 	start_t = get_time_second();
-	Belief* belief = model_->InitialBelief(state_, belief_type_);
-	
-	end_t = get_time_second();
-	logi << "[POMDPEvaluator::InitRound] Created intial belief "
-		<< typeid(*belief).name() << " in " << (end_t - start_t) << "s" << endl;
+	if (isParallelSolver)
+	{	// create belief for all solvers
+		ParallelSolver * parSolver = dynamic_cast<ParallelSolver *>(solver_);
+		for (int sol = 0; sol < parSolver->NumSolvers(); ++sol)
+		{
+			Belief* belief = model_->InitialBelief(NULL, belief_type_);
+			parSolver->belief(belief, sol);
+		}
+	}
+	else
+	{
+		Belief* belief = model_->InitialBelief(state_, belief_type_);
 
-	solver_->belief(belief);
+		end_t = get_time_second();
+		logi << "[POMDPEvaluator::InitRound] Created intial belief "
+			<< typeid(*belief).name() << " in " << (end_t - start_t) << "s" << endl;
+
+		solver_->belief(belief);
+	}
 
 	total_discounted_reward_ = 0;
 	total_undiscounted_reward_ = 0;
@@ -749,7 +832,8 @@ bool POMDPEvaluator::ExecuteAction(int action, double& reward, OBS_TYPE& obs)
 	double random_num = random_.NextDouble();
 	// if this is the first action treat current state as observation
 	// FRAGILE observation = state_id
-	OBS_TYPE lastObs = solver_->belief()->history_.Size() > 0 ? solver_->belief()->history_.LastObservation() : state_->state_id;
+	OBS_TYPE lastObs = solver_->belief()->history_.Size() > 0 ? solver_->belief()->history_.LastObservation() :
+		((POMCP *)solver_)->GetHistory()->Size() > 0 ? ((POMCP *)solver_)->GetHistory()->LastObservation() : nxnGrid::NonObservedState();
 	bool terminal;
 	if (nxnGrid::IsExternalSimulator())
 	{
