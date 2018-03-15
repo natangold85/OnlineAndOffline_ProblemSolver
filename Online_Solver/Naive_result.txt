@@ -1,0 +1,21 @@
+results for naive online. num runs = 20
+
+
+	run #0:
+Solver typePOMCP
+Model = class despot::SC2BasicAgent
+Random root seed = 693088216
+Search depth = 90
+Discount = 0.95
+Simulation steps = 150
+Number of scenarios = 500
+Search time per step = 1
+Regularization constant = 0
+Lower bound = DEFAULT
+Upper bound = DEFAULT
+Policy simulation depth = 90
+Target gap ratio = 0.95
+
+
+SC2Agent Model Details:
+grid size: 4  base location: 0
