@@ -13,6 +13,7 @@ namespace despot
 using intVec = std::vector<int>;
 using uintVec = std::vector<unsigned int>;
 using doubleVec = std::vector<double>;
+using boolVec = std::vector<bool>;
 
 /* =============================================================================
 * State class
@@ -105,6 +106,8 @@ protected:
 	/// create a vector of random numbers between 0 - 1
 	static void CreateRandomVec(doubleVec & randomVec, int size);
 
+	static int FindMaxReward(const doubleVec & rewards, double & expectedReward);
+
 private:
 
 	/*TREE VISU FUNCS*/
@@ -114,7 +117,6 @@ private:
 
 	/*SOLVER FUNCS*/
 	
-	static int FindMaxReward(const doubleVec & rewards, double & expectedReward);
 
 	/// init state from vbs simulator
 	void InitStateExternalSimulator();
@@ -159,9 +161,6 @@ protected:
 	virtual bool LegalAction(OBS_TYPE observation, int action) const = 0;
 
 protected:
-	// lut for actions names (initialized by base class)
-	static std::vector<std::string> s_ACTIONS_STR;
-
 	// for memory allocating
 	static std::mutex s_memoryMutex;
 	static MemoryPool<OnlineSolverState> memory_pool_;

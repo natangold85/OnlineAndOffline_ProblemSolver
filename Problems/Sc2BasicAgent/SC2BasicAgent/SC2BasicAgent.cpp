@@ -20,10 +20,14 @@ static int SumVector(const intVec & vec)
 
 	return sum;
 }
+
 // init static members
 
 intVec SC2DetailedState::s_NUM_BITS_PER_COUNT(InitNumBitsPerCount());
 int SC2DetailedState::s_NUM_BITS_COUNT_PART(SumVector(s_NUM_BITS_PER_COUNT));
+
+intVec SC2DetailedState::s_NUM_BITS_PER_ENEMY_STATUS(InitNumBitsPerEnemyStatus());
+int SC2DetailedState::s_NUM_BITS_ENEMY_STATUS_PART(SumVector(s_NUM_BITS_PER_COUNT));
 
 // state params
 int SC2DetailedState::s_gridSize = 0;
@@ -31,9 +35,10 @@ int SC2DetailedState::s_baseLocation = 0;
 int SC2DetailedState::s_enemyBaseLocation = 0;
 
 std::vector<std::string> SC2DetailedState::s_countNames;
-std::vector<char> SC2DetailedState::s_pixelStatusNames;
+std::vector<std::string> SC2DetailedState::s_enemyStatusNames;
 
 // model params
+SC2BasicAgent::OnlineSolverLUT SC2BasicAgent::s_Q_TABLE;
 std::vector<std::string> SC2BasicAgent::s_ACTION_STR(NUM_ACTIONS);
 
 const int OnlineSolverModel::REWARD_WIN = 50;;
@@ -63,40 +68,57 @@ double DetailedState::ObsProb(STATE_TYPE state_id, OBS_TYPE obs)
 
 SC2DetailedState::SC2DetailedState()
 : m_countVec(NUM_COUNTS)
-, m_miniMap(s_gridSize * s_gridSize, FREE)
+, m_enemyStatus(NUM_ENEMY_STATUS)
 {
 	m_countVec[COMMAND_CENTER] = 1;
-	m_miniMap[s_baseLocation] = BLUE;
-	m_miniMap[s_enemyBaseLocation] = RED;
+	m_enemyStatus[BASE_POWER] = SC2BasicAgent::NUM_START_SCV + SC2BasicAgent::COMMAND_CENTER_2_POWER;
+	m_enemyStatus[ARMY_LOCATION] = s_baseLocation;
+	m_enemyStatus[ENEMY_OBSERVED_LOCATION] = s_NON_VALID_LOCATION;
 }
 
 SC2DetailedState::SC2DetailedState(const State & state)
-: m_countVec(NUM_COUNTS)
-, m_miniMap(s_gridSize * s_gridSize)
+: SC2DetailedState(state.state_id)
 {
-	STATE_TYPE id = state.state_id;
-	InitCountsFromId(id, m_countVec);
-	InitMapFromId(id, m_miniMap);
 }
 
 SC2DetailedState::SC2DetailedState(STATE_TYPE stateId)
 : m_countVec(NUM_COUNTS)
-, m_miniMap(s_gridSize * s_gridSize)
+, m_enemyStatus(NUM_ENEMY_STATUS)
 {
 	InitCountsFromId(stateId, m_countVec);
-	InitMapFromId(stateId, m_miniMap);
+	InitEnemyStatusFromId(stateId, m_enemyStatus);
 }
 
 SC2DetailedState::SC2DetailedState(int * arr)
 : m_countVec(NUM_COUNTS)
-, m_miniMap(s_gridSize * s_gridSize)
+, m_enemyStatus(NUM_ENEMY_STATUS)
 {
 	int idx = 0;
 	for (int i = 0; i < NUM_COUNTS; ++i, ++idx)
 		m_countVec[i] = arr[idx];
 
-	for (int i = 0; i < s_gridSize * s_gridSize; ++i, ++idx)
-		m_miniMap[i] = (PIXEL)arr[idx];
+	int idx = 0;
+	for (int i = 0; i < NUM_COUNTS; ++i, ++idx)
+		m_enemyStatus[i] = arr[idx];
+}
+
+void SC2DetailedState::InitStatic(int baseLocation, int enemyBaseLoc, int gridSize)
+{
+	s_gridSize = gridSize;
+	s_baseLocation = baseLocation;
+	s_enemyBaseLocation = enemyBaseLoc;
+	s_countNames.resize(NUM_COUNTS);
+	s_countNames[COMMAND_CENTER] = "Command Center Count";
+	s_countNames[SUPPLY_DEPOTS] = "Supply Depot Count";
+	s_countNames[BARRACKS] = "Barracks Count";
+	s_countNames[ARMY] = "Army Count";
+	s_countNames[MINERALS] = "Minerals";
+
+	s_enemyStatusNames.resize(NUM_ENEMY_STATUS);
+	s_enemyStatusNames[BASE_POWER] = "Enemy Base Power";
+	s_enemyStatusNames[ARMY_POWER] = "Enemy Army Power";
+	s_enemyStatusNames[ARMY_LOCATION] = "Enemy Army Location";
+	s_enemyStatusNames[ENEMY_OBSERVED_LOCATION] = "Enemy Observed Location";
 }
 
 intVec SC2DetailedState::InitNumBitsPerCount()
@@ -112,9 +134,20 @@ intVec SC2DetailedState::InitNumBitsPerCount()
 	return numBits;
 }
 
+intVec SC2DetailedState::InitNumBitsPerEnemyStatus()
+{
+	intVec numBits(NUM_ENEMY_STATUS);
+
+	numBits[BASE_POWER] = 8;
+	numBits[ARMY_POWER] = 8;
+	numBits[ARMY_LOCATION] = 4;
+	numBits[ENEMY_OBSERVED_LOCATION] = 4;
+
+	return numBits;
+}
 void SC2DetailedState::InitCountsFromId(STATE_TYPE & stateId, intVec & countVec)
 {
-	// retrieve each location according to s_NUM_BITS_LOCATION
+	// retrieve each location according to num bits vec
 	for (int count = 0; count < NUM_COUNTS; ++count)
 	{
 		int bitsForSingleCount = (s_ONE << s_NUM_BITS_PER_COUNT[count]) - 1;
@@ -123,22 +156,26 @@ void SC2DetailedState::InitCountsFromId(STATE_TYPE & stateId, intVec & countVec)
 	}
 }
 
-void SC2DetailedState::InitMapFromId(STATE_TYPE & stateId, miniMap_t & map)
+void SC2DetailedState::InitEnemyStatusFromId(STATE_TYPE & stateId, intVec & enemyStatus)
 {
-	// init location of self
-	int bitsForSinglePixel = (s_ONE << s_NUM_BITS_PIXEL) - 1;
-	for (int singleCount = 0; singleCount < map.size(); ++singleCount)
+	// retrieve each location according to num bits vec
+	for (int count = 0; count < NUM_COUNTS; ++count)
 	{
-		map[singleCount] = static_cast<PIXEL>(stateId & bitsForSinglePixel);
-		stateId >>= s_NUM_BITS_PIXEL;
+		int bitsForSingleCount = (s_ONE << s_NUM_BITS_PER_ENEMY_STATUS[count]) - 1;
+		enemyStatus[count] = stateId & bitsForSingleCount;
+		stateId >>= s_NUM_BITS_PER_ENEMY_STATUS[count];
 	}
-	
+}
+
+void SC2DetailedState::DeleteEnemyFromId(STATE_TYPE & state_id)
+{
+	STATE_TYPE onlyCountsBits = (s_ONE << s_NUM_BITS_COUNT_PART) - 1;
+	state_id = state_id & onlyCountsBits;
 }
 
 STATE_TYPE SC2DetailedState::GetStateId() const
 {
-	STATE_TYPE stateId;
-	stateId = GetIDMiniMap(m_miniMap);
+	STATE_TYPE stateId = GetIDEnemyStatus(m_enemyStatus);
 	stateId <<= s_NUM_BITS_COUNT_PART;
 	stateId |= GetIDCounts(m_countVec);
 	
@@ -152,11 +189,21 @@ OBS_TYPE SC2DetailedState::GetObsId() const
 
 OBS_TYPE SC2DetailedState::GetObsId(double rand) const
 {
-	OBS_TYPE obsId = GetIDMiniMap(m_miniMap, rand);
+	OBS_TYPE obsId = GetIDEnemyDetails(rand);
 	obsId <<= s_NUM_BITS_COUNT_PART;
 	obsId |= GetIDCounts(m_countVec);
 
 	return obsId;
+}
+
+STATE_TYPE SC2DetailedState::GetIDEnemyDetails(double random) const
+{
+	// TODO : based on enemy transition lut and random number return id of enemy details (right now treat it as mdp)
+
+	STATE_TYPE stateId;
+	stateId = GetIDEnemyStatus(m_enemyStatus);
+
+	return stateId;
 }
 
 void SC2DetailedState::CopyFullyObservedFromObservation(const OBS_TYPE obs, State * state)
@@ -181,130 +228,37 @@ STATE_TYPE SC2DetailedState::GetIDCounts(const intVec &countVec)
 	return id;
 }
 
-STATE_TYPE SC2DetailedState::GetIDMiniMap(const miniMap_t & miniMap)
+STATE_TYPE SC2DetailedState::GetIDEnemyStatus(const intVec &enemyStatusVec)
 {
 	STATE_TYPE id = 0;
-	for (int obj = miniMap.size() - 1; obj >= 0; --obj)
+
+	for (int status = NUM_ENEMY_STATUS - 1; status >= 0; --status)
 	{
-		id <<= s_NUM_BITS_PIXEL;
-		id |= miniMap[obj];
+		id <<= s_NUM_BITS_PER_ENEMY_STATUS[status];
+		id |= enemyStatusVec[status];
 	}
 
 	return id;
 }
 
-STATE_TYPE SC2DetailedState::GetIDMiniMap(const miniMap_t & miniMap, double random)
-{
-	// assumption base in corner
-	int startX = s_baseLocation % s_gridSize;
-	int startY = s_baseLocation / s_gridSize;
-
-	int changeX = startX == 0 ? 1 : -1;
-	int changeY = startY == 0 ? 1 : -1;
-
-	
-	std::vector<std::pair<int, double>> probMat;
-	InitProbMat(miniMap, probMat);
-
-	miniMap_t obsMap(miniMap.size());
-	obsMap[s_baseLocation] = BLUE;
-	GetIDMiniMapRec(obsMap, probMat, 1.0, random, 0);
-
-
-	return GetIDMiniMap(obsMap);
-}
-
-void SC2DetailedState::InitProbMat(const miniMap_t & map, std::vector<std::pair<int, double>> &probMat)
-{
-	Coordinate base(s_baseLocation % s_gridSize, s_baseLocation / s_gridSize);
-	for (int i = 0; i < s_gridSize * s_gridSize; ++i)
-	{
-		if (map[i] == RED)
-		{
-			Coordinate pnt(i % s_gridSize, i / s_gridSize);
-			probMat.emplace_back(i, 1.0 / (pnt.Distance(base)));
-		}
-	}
-}
-void SC2DetailedState::GetIDMiniMapRec(miniMap_t & map, const std::vector<std::pair<int, double>> &probMat, double prob, double & random, int currIdx)
-{
-	if (currIdx == probMat.size())
-	{
-		random -= prob;
-	}
-	else
-	{
-		const std::pair<int, double> & locAndProb = probMat[currIdx];
-		map[locAndProb.first] = FREE;
-		GetIDMiniMapRec(map, probMat, prob * (1 - locAndProb.second), random, currIdx + 1);
-		
-		if (random <= 0)
-			return;
-
-		map[locAndProb.first] = RED;
-		GetIDMiniMapRec(map, probMat, prob * locAndProb.second, random, currIdx + 1);
-	}
-}
 
 double SC2DetailedState::ObsProbPartialObsVars(STATE_TYPE state_id, OBS_TYPE obs)
 {
 	SC2DetailedState realState(state_id);
-	miniMap_t & stateMap(realState.GetMiniMap());
-
-	// skip fully obs vars
-	obs >>= s_NUM_BITS_COUNT_PART;
-	miniMap_t observationMap(s_gridSize * s_gridSize);
-	InitMapFromId(obs, observationMap);
-
-	// run on obs map if there is red spot where cannot be return 0
-	for (int i = 0; i < s_gridSize * s_gridSize; ++i)
-	{
-		if (observationMap[i] == RED && stateMap[i] != RED)
-			return 0.0;
-	}
-
-	// don't treat blue spots for now
-	std::vector<std::pair<int, double>> probMat;
-	InitProbMat(stateMap, probMat);
-
-	double p = 1.0;
-	for (auto locAndProb : probMat)
-	{
-		p *= observationMap[locAndProb.first] == RED ? locAndProb.second : 1 - locAndProb.second;
-	}
-
-	return p;
+	// TODO use transition from qTable
+	return -1;
 }
 
 void SC2DetailedState::StateVector(uintVec & vec) const
 {
+	vec.resize(NUM_COUNTS + NUM_ENEMY_STATUS);
 	int idx = 0;
 	for (; idx < m_countVec.size(); ++idx)
 		vec[idx] = m_countVec[idx];
 
-	for (int pix = 0; pix < m_miniMap.size(); ++pix, ++idx)
-	{
-		vec[idx] = m_miniMap[pix];
-	}
+	for (int i = 0; i < m_enemyStatus.size(); ++i, ++idx)
+		vec[idx] = m_enemyStatus[i];
 
-}
-
-void SC2DetailedState::InitStatic()
-{
-	s_gridSize = -1;
-	s_baseLocation = -1;
-	s_enemyBaseLocation = -1;
-	s_countNames.resize(NUM_COUNTS);
-	s_countNames[COMMAND_CENTER] = "Command Center Count";
-	s_countNames[SUPPLY_DEPOTS] = "Supply Depot Count";
-	s_countNames[BARRACKS] = "Barracks Count";
-	s_countNames[ARMY] = "Army Count";
-	s_countNames[MINERALS] = "Minerals";
-
-	s_pixelStatusNames.resize(NUM_PIXEL_OPTIONS);
-	s_pixelStatusNames[FREE] = '_';
-	s_pixelStatusNames[RED] = 'R';
-	s_pixelStatusNames[BLUE] = 'B';
 }
 
 std::string SC2DetailedState::text() const
@@ -316,30 +270,9 @@ std::string SC2DetailedState::text() const
 	}
 	ret += ")\n";
 
-	ret += MiniMapStr();
-
 	return ret;
 }
 
-std::string SC2DetailedState::MiniMapStr() const
-{
-	std::string ret;
-	for (int x = 0; x < s_gridSize; ++x)
-	{
-		for (int y = 0; y < s_gridSize; ++y)
-		{
-			int idx = x + y * s_gridSize;
-			if (idx == s_baseLocation)
-				ret += s_pixelStatusNames[BLUE];
-			else
-				ret += s_pixelStatusNames[m_miniMap[idx]];
-		}
-		ret += "\n";
-	}
-	ret += "\n";
-
-	return ret;
-}
 
 bool SC2DetailedState::MaxCount(int idxCount) const
 {
@@ -347,42 +280,46 @@ bool SC2DetailedState::MaxCount(int idxCount) const
 	return m_countVec[idxCount] == maxCount;
 }
 
-int SC2DetailedState::EnemyPower() const
-{
-	int power = 0;
-	for (auto pixel : m_miniMap)
-	if (pixel == RED)
-		++power;
 
-	return power;
-}
 
 bool SC2DetailedState::NoEnemy() const
 {
-	for (auto pixel : m_miniMap)
-	if (pixel == RED)
-		return false;
-
-	return true;
+	if (m_enemyStatus[BASE_POWER] == 0 && m_enemyStatus[ARMY_POWER] == 0)
+		return true;
+	return false;
 }
 
-bool SC2DetailedState::RedNearBase() const
+bool SC2DetailedState::IsObservedEnemy() const
 {
-	// assumption : base is in corner
-
-	int baseX = s_baseLocation % s_gridSize;
-	int baseY = s_baseLocation / s_gridSize;
-
-	int changeX = baseX == 0 ? 1 : -1;
-	int changeY = baseY == 0 ? s_gridSize : -s_gridSize;
-
-	bool redNear = m_miniMap[s_baseLocation + changeX] == RED;
-	redNear |= m_miniMap[s_baseLocation + changeY] == RED;
-	redNear |= m_miniMap[s_baseLocation + changeX + changeY] == RED;
-
-	return redNear;
+	return m_enemyStatus[ENEMY_OBSERVED_LOCATION] != s_NON_VALID_LOCATION;
 }
 
+bool SC2DetailedState::EnemyLocation(int & enemyPower) const
+{
+	if (m_enemyStatus[ENEMY_OBSERVED_LOCATION] != s_enemyBaseLocation && m_enemyStatus[ENEMY_OBSERVED_LOCATION] != s_NON_VALID_LOCATION)
+	{
+		enemyPower = m_enemyStatus[ARMY_POWER];
+		return m_enemyStatus[ENEMY_OBSERVED_LOCATION];
+	}
+	else
+	{
+		enemyPower = m_enemyStatus[BASE_POWER];
+		return s_enemyBaseLocation;
+	}
+}
+
+bool SC2DetailedState::UpdatePower(int attackLocation, int power)
+{
+	bool valid = true;
+	if (m_enemyStatus[ARMY_LOCATION] == attackLocation)
+		m_enemyStatus[ARMY_POWER] = power;
+	else if (s_enemyBaseLocation == attackLocation)
+		m_enemyStatus[ARMY_POWER] = power;
+	else
+		valid = false;
+
+	return valid;
+}
 
 /* =============================================================================
 * SC2BasicAgent Functions
@@ -406,15 +343,18 @@ void OnlineSolverModel::InsertState2Buffer(uintVec & buffer, State * state)
 	s.StateVector(buffer);
 }
 
-SC2BasicAgent::SC2BasicAgent(int gridSize, int baseLocation, int enemyBaseLoc)
+SC2BasicAgent::SC2BasicAgent(int gridSize, int baseLocation)
 	: m_gridSize(gridSize)
 	, m_baseLocation(baseLocation)
-	, m_enemyBaseLocation(enemyBaseLoc)
+	, m_enemyBaseLocation(0)
 {
+	if (m_baseLocation == 0)
+		m_enemyBaseLocation = gridSize * gridSize - 1;
+
 	// init size  of state for nxnGridstate
 	SC2DetailedState::s_gridSize = gridSize;
 	SC2DetailedState::s_baseLocation = baseLocation;
-	SC2DetailedState::s_enemyBaseLocation = enemyBaseLoc;
+	SC2DetailedState::s_enemyBaseLocation = m_enemyBaseLocation;
 
 	s_ACTION_STR[NOTHING] = "Nothing";
 	s_ACTION_STR[BUILD_SUPPLY_DEPOT] = "Build Supply Depot";
@@ -423,6 +363,48 @@ SC2BasicAgent::SC2BasicAgent(int gridSize, int baseLocation, int enemyBaseLoc)
 	s_ACTION_STR[ATTACK] = "Attack";
 }
 
+void SC2BasicAgent::InitQTable(OnlineSolverLUT & qTable, int gridSize, int baseLocation)
+{
+	auto model = new SC2BasicAgent(gridSize, baseLocation);
+	s_Q_TABLE = qTable;
+
+	// assessing self power transition to derive enemy transition by it
+	int numStepsForState = 100;
+	std::map<int, std::vector<int>> power2PowerTransition;
+	for (auto itr : qTable)
+	{
+		intVec counts;
+		State s(itr.first, 1);
+		double reward;
+		int action = OnlineSolverModel::FindMaxReward(itr.second, reward);
+
+		SC2DetailedState::InitCountsFromId(s.state_id, counts);
+		SC2DetailedState::DeleteEnemyFromId(s.state_id);
+
+		int initialPower = NUM_START_SCV + SumVector(counts);
+		
+		OBS_TYPE obs = 0;
+		int sumTransitionPower = 0;
+
+		for (int i = 0; i < numStepsForState; ++i)
+		{
+			State s2(s);
+			model->Step(s, static_cast<float>(i) / numStepsForState, action, reward, obs);
+			SC2DetailedState::InitCountsFromId(s.state_id, counts);
+			sumTransitionPower += NUM_START_SCV + SumVector(counts);
+		}
+
+		int endPower = sumTransitionPower / numStepsForState;
+		power2PowerTransition[initialPower].emplace_back(endPower);
+	}
+
+	for (auto itr : power2PowerTransition)
+	{
+		s_ENEMY_TRANSITION_LUT[itr.first] = SumVector(itr.second) / itr.second.size();
+	}
+
+	delete model;
+}
 
 State * SC2BasicAgent::CreateStartState(std::string type) const
 {
@@ -463,16 +445,16 @@ bool SC2BasicAgent::Step(State& s, double randomObservation, int action, double&
 
 	// run on actions
 	if (action == BUILD_SUPPLY_DEPOT)
-		BuildSupplyDepot(state, reward);
+		buildSupplyDepot(state, reward);
 	else if (action == BUILD_BARRACKS)
-		BuildBarracks(state, reward);
+		buildBarracks(state, reward);
 	else if (action == TRAIN_ARMY)
-		TrainArmy(state, reward);
+		trainArmy(state, reward);
 	else if (action == ATTACK)
-		Attack(state, RandomNum(), reward);
+		attack(state, RandomNum(), reward);
 
 	// set next position of the objects on grid
-	SetNextState(state, RandomNum(), RandomNum());
+	setNextState(state, RandomNum(), RandomNum());
 
 	reward = REWARD_STEP;
 
@@ -484,7 +466,7 @@ bool SC2BasicAgent::Step(State& s, double randomObservation, int action, double&
 }
 
 
-void SC2BasicAgent::BuildSupplyDepot(SC2DetailedState & state, double & reward) const
+void SC2BasicAgent::buildSupplyDepot(SC2DetailedState & state, double & reward) const
 {
 	if (state[SC2DetailedState::MINERALS] < SUPPLY_DEPOT_PRICE)
 		reward = REWARD_ILLEGAL_MOVE;
@@ -496,7 +478,7 @@ void SC2BasicAgent::BuildSupplyDepot(SC2DetailedState & state, double & reward) 
 
 }
 
-void SC2BasicAgent::BuildBarracks(SC2DetailedState & state, double & reward) const
+void SC2BasicAgent::buildBarracks(SC2DetailedState & state, double & reward) const
 {
 	if (state[SC2DetailedState::MINERALS] < BARRACKS_PRICE || state[SC2DetailedState::SUPPLY_DEPOTS] <= state[SC2DetailedState::BARRACKS])
 		reward = REWARD_ILLEGAL_MOVE;
@@ -507,7 +489,7 @@ void SC2BasicAgent::BuildBarracks(SC2DetailedState & state, double & reward) con
 	}
 }
 
-void SC2BasicAgent::TrainArmy(SC2DetailedState & state, double & reward) const
+void SC2BasicAgent::trainArmy(SC2DetailedState & state, double & reward) const
 {
 	if (state[SC2DetailedState::MINERALS] < TRAINING_PRICE || state[SC2DetailedState::BARRACKS] < 1)
 		reward = REWARD_ILLEGAL_MOVE;
@@ -519,28 +501,29 @@ void SC2BasicAgent::TrainArmy(SC2DetailedState & state, double & reward) const
 }
 
 
-void SC2BasicAgent::Attack(SC2DetailedState & state, double random, double & reward) const
+void SC2BasicAgent::attack(SC2DetailedState & state, double random, double & reward) const
 {
-	if (state[SC2DetailedState::ARMY] > 10)
+	int attackLocation;
+	int enemyPower;
+	attackLocation = state.EnemyLocation(enemyPower);
+	pairInt src(state[SC2DetailedState::ARMY], enemyPower);
+	auto result = s_ATTACKS_LUT.find(src);
+	if (result != s_ATTACKS_LUT.end())
 	{
-		if (random > 0.5)
-		{
-			miniMap_t & map = state.GetMiniMap();
-
-			for (int i = 0; i < map.size(); ++i)
-			{
-				if (map[i] == RED)
-				{
-					map[i] = FREE;
-					break;
-				}
-			}
-
-			--state[SC2DetailedState::ARMY];
-		}
+		
+		// TODO : use attack lut to understand attack results
+		state[SC2DetailedState::ARMY] = result->second.first;
+		state.UpdatePower(attackLocation, result->second.second);
 	}
-	else if (state[SC2DetailedState::ARMY] > 0)
-		--state[SC2DetailedState::ARMY];
+	else
+	{
+		// naive modelling of attack
+		enemyPower -= src.first;
+		state[SC2DetailedState::ARMY] -= src.second / 2;
+		state.UpdatePower(attackLocation, enemyPower);
+	}
+
+
 }
 
 bool SC2BasicAgent::LegalAction(OBS_TYPE observation, int action) const
@@ -574,69 +557,9 @@ bool SC2BasicAgent::LegalAction(OBS_TYPE observation, int action) const
 	return legalAction;
 }
 
-void SC2BasicAgent::SetNextState(SC2DetailedState & state, double spreadingEnemy, double enemyAttack) const
+void SC2BasicAgent::setNextState(SC2DetailedState & state, double spreadingEnemy, double enemyAttack) const
 {
-	if (spreadingEnemy > .90)
-	{
-		miniMap_t & map = state.GetMiniMap();
-
-		bool spread = false;
-		for (int idx = 0; idx < map.size() && !spread; ++idx)
-		{
-			if (map[idx] == RED)
-			{
-				Coordinate pnt(idx % m_gridSize, idx / m_gridSize);
-
-				for (int d = 0; d < SOUTH_EAST && !spread; ++d)
-				{
-					Coordinate dir(pnt + Move_Properties::s_directionsLUT[d]);
-					int loc = dir.GetIdx(m_gridSize);
-
-					if (dir.ValidLocation(m_gridSize) && map[loc] == FREE)
-					{
-						map[dir.GetIdx(m_gridSize)] = RED;
-						spread = true;
-					}
-
-				}
-			}
-		}
-	}
-
-	if (enemyAttack > 0.75)
-	{
-		int attackPower = state.EnemyPower();
-
-		if (state[SC2DetailedState::ARMY] > 0)
-		{
-			int powerNeed = min(state[SC2DetailedState::ARMY], attackPower);
-			attackPower -= powerNeed;
-			state[SC2DetailedState::ARMY] -= powerNeed;
-		}
-
-		if (attackPower > 0 && state.RedNearBase())
-		{
-
-			if (attackPower > 0 && state[SC2DetailedState::BARRACKS] > 0)
-			{
-				int powerNeed = min(state[SC2DetailedState::BARRACKS], attackPower / 3);
-				attackPower -= powerNeed * 3;
-				state[SC2DetailedState::BARRACKS] -= powerNeed;
-			}
-
-			if (attackPower > 0 && state[SC2DetailedState::SUPPLY_DEPOTS] > 0)
-			{
-				int powerNeed = min(state[SC2DetailedState::SUPPLY_DEPOTS], attackPower / 3);
-				attackPower -= powerNeed * 3;
-				state[SC2DetailedState::SUPPLY_DEPOTS] -= powerNeed;
-			}
-			else if (attackPower > 0 && state[SC2DetailedState::COMMAND_CENTER] > 0)
-			{
-				attackPower = (attackPower > 5);
-				state[SC2DetailedState::COMMAND_CENTER] -= attackPower;
-			}
-		}
-	}
+	// TODO : enemy development simulation
 
 	state[SC2DetailedState::MINERALS] += MINNING_RATE;
 }

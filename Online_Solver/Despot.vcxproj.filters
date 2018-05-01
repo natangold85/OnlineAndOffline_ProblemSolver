@@ -177,6 +177,9 @@
     <ClInclude Include="include\despot\OnlineSolverModel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\despot\solver\ParallelSolver.h">
+      <Filter>Header Files\solver</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include=".\src\evaluator.cpp">
@@ -283,6 +286,9 @@
     </ClCompile>
     <ClCompile Include="src\OnlineSolverModel.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\solver\ParallelSolver.cpp">
+      <Filter>Source Files\solver</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

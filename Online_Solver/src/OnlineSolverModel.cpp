@@ -16,8 +16,6 @@ int SumVector(const intVec & vec)
 }
 
 // model params
-std::vector<std::string> OnlineSolverModel::s_ACTIONS_STR;
-
 int OnlineSolverModel::s_periodOfDecision = 1;
 
 bool OnlineSolverModel::s_isOnline = true;

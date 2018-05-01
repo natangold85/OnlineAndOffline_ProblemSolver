@@ -13,7 +13,6 @@
 namespace despot 
 {
 
-
 // TODO : need 2 find solution for last observation using this model (after inserting solverto lib)
 // translation between stateId to logical repressentation of state
 class nxnGridDetailedState : public DetailedState
@@ -29,9 +28,12 @@ public:
 	static void InitStatic();
 
 	// Id to state interface functions
-	static void InitLocationsFromId(STATE_TYPE state_id, intVec & locations);
+	static void InitLocationsFromId(STATE_TYPE & state_id, intVec & locations);
+	static void InitIsObservedBoolFromId(STATE_TYPE & state_id, boolVec & locations);
+
 	static int GetObjLocation(STATE_TYPE state_id, int objIdx);
-	static int GetObservedObjLocation(OBS_TYPE state_id, int objIdx);
+	static bool IsEnemyObserved(OBS_TYPE state_id, int enemyIdx);
+	static void GetEnemyObservedVec(OBS_TYPE state_id, boolVec & enemyObsVec);
 
 	STATE_TYPE GetStateId() const;
 	OBS_TYPE GetObsId() const;
@@ -53,11 +55,14 @@ public:
 
 	/// print the state
 	std::string text() const;
-	static void PrintGrid(const intVec & locations, std::string & buffer);
+	void PrintGrid(std::string & buffer) const;
 	/// return char identified location
-	static char ObjIdentity(const intVec & locations, int location);
+	char ObjIdentity(int location) const;
 
 	// object related functions
+	bool IsEnemyObserved(int enemyIdx) const { return m_isEnemyObserved[enemyIdx]; };
+	void IsEnemyObserved(int enemyIdx, bool isObs) { m_isEnemyObserved[enemyIdx] = isObs; };
+
 	void EraseNonInv();
 	void EraseObject(int objectIdx);
 	
@@ -69,12 +74,12 @@ public:
 	//bool NonValidState() const;
 	/*MEMBERS*/
 	intVec m_locations;
+	boolVec m_isEnemyObserved;
 
 	/*STATIC MEMBERS*/
 
 	/// bits for location
 	static const int s_NUM_BITS_LOCATION = 8;
-	
 	/// shelter vector
 	static intVec s_shelters;
 
@@ -102,17 +107,17 @@ public:
 	///	enum of objects
 	enum OBJECT { SELF, ENEMY, NON_INV, SHELTER, TARGET, NUM_OBJECTS };
 
-	//enum SIMULATOR_OBJECTS { SELF_VBS, ENEMY_VBS, NON_INVOLVED_VBS, SHELTER_VBS, TARGET_VBS, OBSERVED_ENEMY_VBS, OBSERVED_NON_INVOLVED_VBS };
-
 	/// enum of type of calculation using sarsop data map
 	enum CALCULATION_TYPE { WITHOUT, ALL, WO_NINV, JUST_ENEMY, ONE_ENEMY, WO_NINV_STUPID };
 	 
 	explicit nxnGrid(int gridSize, int traget, Self_Obj & self, std::vector<intVec> & objectsInitLoc);
 	~nxnGrid() = default;
 	
-
 	/// init offline decision lut
 	static void InitLUT(OnlineSolverLUT & offlineLut, int offlineGridSize, CALCULATION_TYPE cType = WITHOUT);
+
+	int ChoosePreferredAction(POMCPPrior * prior, double & expectedReward) const;
+	void ChoosePreferredAction(POMCPPrior * prior, doubleVec & expectedRewards) const;
 
 	/// Functions for creating of model
 
@@ -132,27 +137,24 @@ public:
 	/// return grid size
 	int GetGridSize() const { return m_gridSize; };
 
-	static CALCULATION_TYPE GetLUTCalcType() { return s_calculationType; };
-
-	/// get non observed state
-	static OBS_TYPE NonObservedState() { return s_nonObservedState; };
-
 	/// initialize beliefState according to history
 	void InitBeliefState(nxnGridDetailedState & beliefState, const History & h) const;
 	
 	/// recieve init state from simulator
 	virtual void InitState() override;
 
-	// Functions for despot algorithm (for more information read the document "Tutorial on Using DESPOT with cpp model")
+	virtual double ObsProb(OBS_TYPE obs, const State& state, int action) const override;
 
 	/// return the probability for an observation given a state and an action
 	double ObsProbOneObj(OBS_TYPE obs, const State& state, int action, int objIdx) const;
-
 
 	/// return initial state
 	virtual State *CreateStartState(std::string type) const override;
 	///  return initial belief
 	virtual Belief* InitialBelief(const State* start, std::string type) const override;
+
+	// create particle vector based on possible objects location and its weight (for resample)
+	void CreateParticleVec(std::vector<std::vector<std::pair<int, double> > > & objLocations, std::vector<State*> & particles) const;
 
 	/// implementation of choose prefferred action
 	void ChoosePreferredActionIMP(const nxnGridDetailedState & beliefState, doubleVec & expectedReward) const;
@@ -169,6 +171,10 @@ public:
 
 /// functions that are necessary for step and action calculation
 protected:
+
+	virtual int randLegalAction(OBS_TYPE observation) const = 0;
+
+	static CALCULATION_TYPE getLUTCalcType() { return s_calculationType; };
 
 	/// recieve current state from simulator and update rewrd and observation
 	virtual bool RcvStateIMP(intVec & buffer, State * s, double & reward, OBS_TYPE & obs) const override;
@@ -190,7 +196,7 @@ protected:
 	static void CreateRandomVec(doubleVec & randomVec, int size);
 
 	/// retrieve the observed state given current state and random number
-	OBS_TYPE FindObservation(const nxnGridDetailedState & state, double p) const;
+	OBS_TYPE UpdateObservation(nxnGridDetailedState & state, double p) const;
 
 	/// advance the state to the next step position (regarding to other objects movement)
 	void SetNextPosition(nxnGridDetailedState & state, doubleVec & randomNum) const;
@@ -206,9 +212,6 @@ private:
 	///// fill values of subtrees
 	static unsigned int SendTreeRec(VNode *node, unsigned int parentId, unsigned int id, std::vector<unsigned int> & buffer);
 	static unsigned int SendTreeRec(QNode *node, unsigned int parentId, unsigned int id, unsigned int nextAvailableId, std::vector<unsigned int> & buffer);
-
-
-	OBS_TYPE GetNonObservedState() const;
 
 	static int FindMaxReward(const doubleVec & rewards, double & expectedReward);
 	/// create particle from available locations
@@ -259,9 +262,6 @@ private:
 	/// return true if action is related to enemy
 	virtual bool EnemyRelatedAction(int action) const = 0;
 
-	// create particle vector based on possible objects location and its weight
-	void CreateParticleVec(std::vector<std::vector<std::pair<int, double> > > & objLocations, std::vector<State*> & particles) const;
-
 protected:
 	int m_gridSize;
 	int m_targetIdx;
@@ -272,7 +272,6 @@ protected:
 	
 	std::vector<ObjInGrid> m_shelters;
 
-	static OBS_TYPE s_nonObservedState;
 	// init locations of objects (needs to be in the size of number of objects - including self)
 	static std::vector<intVec> s_objectsInitLocations;
 
@@ -296,6 +295,21 @@ public:
 	static const int REWARD_FIRE;
 
 };
+
+/* =============================================================================
+* nxnGridBelief class
+* =============================================================================*/
+class nxnGridBelief : public ParticleBelief
+{
+public:
+	nxnGridBelief(std::vector<State*> particles, const DSPOMDP* model, Belief* prior = NULL, bool split = true)
+		: ParticleBelief(particles, model, prior, split) {}
+
+protected:
+	virtual void Update(int action, OBS_TYPE obs) override;
+	static std::vector<State*> Resample(int num, const std::vector<State*>& belief, const DSPOMDP* model, History history);
+};
+
 
 } // end ns despot
 

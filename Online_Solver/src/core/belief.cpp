@@ -360,7 +360,8 @@ namespace despot {
 		particles_ = updated;
 
 		// Resample if the particle set is empty
-		if (particles_.size() == 0) {
+		if (particles_.size() == 0) 
+		{
 			logw << "Particle set is empty!" << endl;
 			if (prior_ != NULL) {
 				logw
@@ -443,4 +444,28 @@ namespace despot {
 		return oss.str();
 	}
 
+
+
+std::vector<State*> FullyObservedBelief::Sample(int num) const
+{
+	std::vector<State*> belief(num);
+	for (int i = 0; i < num; ++i)
+	{
+		belief[i] = model_->Allocate(m_currBaliefState->state_id, 1 / num);
+	}
+
+	return belief;
+}
+
+Belief * FullyObservedBelief::MakeCopy() const 
+{
+	State *copy = model_->Copy(m_currBaliefState);
+
+	return new FullyObservedBelief(copy, model_);
+}
+
+void FullyObservedBelief::Update(int action, OBS_TYPE obs)
+{
+	m_currBaliefState->state_id = obs;
+}
 } // namespace despot

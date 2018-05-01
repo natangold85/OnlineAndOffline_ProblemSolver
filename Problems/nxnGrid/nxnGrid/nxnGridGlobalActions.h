@@ -28,13 +28,17 @@ public:
 	// Functions for self use
 
 	/// take one step for a given state and action return true if the simulation terminated, update reward and observation
-	virtual bool Step(State& s, double random, int action, OBS_TYPE lastObs, double & reward, OBS_TYPE& obs) const/* override*/;
-	virtual bool Step(State& s, double random, int action, double & reward, OBS_TYPE& obs) const override { return false; };
+	virtual bool Step(State& s, double random, int action, double & reward, OBS_TYPE& obs) const override;
 
 	virtual int NumActions() const override;
 
 	/// return the min reward valued action (needed for the despot algorithm)
 	virtual ValuedAction GetMinRewardAction() const override;
+
+protected:
+	virtual bool LegalAction(OBS_TYPE observedState, int action) const override;
+	//return random legal action given last observation
+	virtual int randLegalAction(OBS_TYPE observation) const override;
 
 private:
 
@@ -46,7 +50,7 @@ private:
 	void MoveToTarget(nxnGridDetailedState & state, double random) const;
 	void MoveToShelter(nxnGridDetailedState & state, double random) const;
 	void Attack(nxnGridDetailedState & state, int target, double random, double & reward) const;
-	void MoveFromEnemy(nxnGridDetailedState & state, int idxEnemy, double random, OBS_TYPE lastObs) const;
+	void MoveFromEnemy(nxnGridDetailedState & state, int idxEnemy, double random) const;
 
 	void MoveToLocation(nxnGridDetailedState & state, int location, double random) const;
 
@@ -65,8 +69,6 @@ private:
 	/// return true if the action is enemy related action
 	virtual bool EnemyRelatedAction(int action) const override;
 
-	//return random legal action given last observation
-	virtual bool LegalAction(OBS_TYPE observedState, int action) const override;
 
 	/*MEMBERS*/
 	static bool s_isMoveFromEnemy;

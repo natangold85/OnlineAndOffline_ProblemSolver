@@ -23,13 +23,19 @@ static const std::string solverType = "POMCP"; //"POMCP";  //"Parallel_POMCP"; /
 static const std::string beliefType = "SC2AgentBelief"; //"DEFAULT";  //"SC2AgentBelief";
 static const bool s_PARALLEL_RUN = solverType == "Parallel_POMCP";
 
-
-static const int s_ONLINE_GRID_SIZE = 4;
+// solver params
 static const int s_PERIOD_OF_DECISION = 1; // sending action not in every decision
 static const int s_SEARCH_PRIOD = 1;
 static const int s_PORT_SEND_TREE = 5678;
 static const int s_PORT_VBS = 5432;
 
+// model params
+static const int s_ONLINE_GRID_SIZE = 4;
+static const int s_BASE_LOCATION = 0;
+static std::string s_Q_TABLE_NAME = "q_table.txt";
+
+void ErrorAndExit(char *errorMsg);
+void ReadQTable(OnlineSolverModel::OnlineSolverLUT & lutForModel);
 void Run(int argc, char* argv[], std::string & outputFName, int numRuns);
 
 /// solve nxn Grid problem
@@ -44,10 +50,7 @@ public:
 		// init static members
 		SC2DetailedState::InitStatic();
 
-		int baseLoc = 0;
-		int enemyBaseLoc = s_ONLINE_GRID_SIZE * s_ONLINE_GRID_SIZE - 1;
-
-		SC2BasicAgent *model = new SC2BasicAgent(s_ONLINE_GRID_SIZE, baseLoc, enemyBaseLoc);
+		SC2BasicAgent *model = new SC2BasicAgent(s_ONLINE_GRID_SIZE, s_BASE_LOCATION);
 		return model;
 	}
 
@@ -69,6 +72,10 @@ int main(int argc, char* argv[])
 	SC2BasicAgent::InitSolverParams(s_ONLINE_ALGO, s_PARALLEL_RUN, s_PERIOD_OF_DECISION);
 	Globals::config.time_per_move = s_SEARCH_PRIOD;
 
+	SC2BasicAgent::OnlineSolverLUT lutForModel;
+	ReadQTable(lutForModel);
+	SC2BasicAgent::InitQTable(lutForModel, s_ONLINE_GRID_SIZE, s_BASE_LOCATION);
+
 	// create output file
 	std::string outputFNameNaive("Naive");
 	outputFNameNaive.append("_result.txt");
@@ -80,15 +87,19 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+void ErrorAndExit(char *errorMsg)
+{
+	std::cout << "Error!!! error in " << errorMsg << "\npress any key to exit...\n";
+	char c;
+	std::cin >> c;
+	exit(1);
+}
 void Run(int argc, char* argv[], std::string & outputFName, int numRuns)
 {
 	remove(outputFName.c_str());
 	std::ofstream output(outputFName.c_str(), std::ios::out);
 	if (output.fail())
-	{
-		std::cerr << "failed open output file";
-		exit(1);
-	}
+		ErrorAndExit("open output file");
 
 	// run model numRuns times
 	output << "results for naive online. num runs = " << numRuns << "\n";
@@ -102,7 +113,71 @@ void Run(int argc, char* argv[], std::string & outputFName, int numRuns)
 
 	if (output.fail())
 	{
-		std::cerr << "error in write output file";
-		exit(1);
+		ErrorAndExit("write output file");
 	}
+}
+
+void ReadQTable(OnlineSolverModel::OnlineSolverLUT & lutForModel)
+{
+	SC2DetailedState::InitStatic(0, 15, s_ONLINE_GRID_SIZE);
+	std::ifstream qTable(s_Q_TABLE_NAME, std::ios::in);
+
+	if (qTable.fail())
+		ErrorAndExit("open qtable");
+
+	std::string txt;
+	while (txt != "[" && !qTable.eof())
+		qTable >> txt;
+
+	bool isDoubles = false;
+	while (!qTable.eof())
+	{
+		// read state
+		SC2DetailedState currState;
+		
+		// read counts
+		for (int c = 0; c < SC2DetailedState::NUM_COUNTS; ++c)
+			qTable >> currState[c];
+
+		// read hotspots
+
+		int idx = 0;
+		qTable >> txt;
+		//while (txt != "...")
+		//{
+		//	int hotspotVal = atoi(txt.c_str());
+		//	hotspotVal = min(1, hotspotVal);
+		//	miniMap[idx] = (PIXEL)hotspotVal;
+		//	++idx;
+		//	qTable >> txt;
+		//}
+
+		//// rest of idx that not been sent will be set to 0 in the mean time
+		//for (; idx < miniMap.size(); ++idx)
+		//	miniMap[idx] = FREE;
+		//// insert base location
+		//miniMap[SC2DetailedState::s_baseLocation] = BLUE;
+
+		doubleVec rewardVec(SC2BasicAgent::NUM_ACTIONS);
+		idx = 0;
+		// read values
+		qTable >> txt;
+		while (txt != "[" && !qTable.eof())
+		{
+			if (idx < rewardVec.size())
+				rewardVec[idx] = atof(txt.c_str());
+
+			++idx;
+			qTable >> txt;
+		}
+		
+		auto itr = lutForModel.find(currState.GetStateId());	
+		if (itr == lutForModel.end())
+			lutForModel[currState.GetStateId()] = rewardVec;
+		else
+			isDoubles = true;
+	}
+
+	if (isDoubles)
+		std::cout << "\n\n\nThere is duplicate states in Q Table !!!!\n\n\n";
 }

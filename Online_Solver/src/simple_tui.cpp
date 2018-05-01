@@ -240,6 +240,7 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
   
   for (int round = start_run; round < start_run + num_runs; round++) 
   {
+	  std::cout << "start round\n";
 	  OnlineSolverModel *m = static_cast<OnlineSolverModel *>(model); //NATAN CHANGES (random initial condition)
 	  m->InitState();
     default_out << endl
@@ -247,13 +248,15 @@ void SimpleTUI::RunEvaluator(DSPOMDP *model, Evaluator *simulator,
                 << " #######################################" << endl;
 
 
-	simulator->InitRound(OnlineSolverModel::ParallelRun());
+	bool isParallelRun = OnlineSolverModel::ParallelRun();
+	simulator->InitRound(isParallelRun);
 	int i = 0;
+	std::cout << "start alg\n";
 	if (simulator_type == "user")
 	{
 		simulator->UserPlayRound();
 	}
-	else if (OnlineSolverModel::ParallelRun())
+	else if (isParallelRun)
 		simulator->RunRoundForParallel(round);
 	else
 	{	// original implementation

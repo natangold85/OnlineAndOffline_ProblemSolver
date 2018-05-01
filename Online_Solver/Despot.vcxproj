@@ -86,6 +86,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>.\include\;.\..\udp_protocol\include;.\include\despot\solver;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -118,6 +119,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>.\include\;.\..\udp_protocol\include;.\include\despot\solver;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -166,6 +168,7 @@
     <ClInclude Include=".\include\despot\util\tinyxml\tinyxml.h" />
     <ClInclude Include=".\include\despot\util\util.h" />
     <ClInclude Include="include\despot\OnlineSolverModel.h" />
+    <ClInclude Include="include\despot\solver\ParallelSolver.h" />
     <ClInclude Include="src\ThreadDataClass.h" />
     <ClInclude Include="src\Tree_Properties.h" />
   </ItemGroup>
@@ -204,6 +207,7 @@
     <ClCompile Include=".\src\util\tinyxml\tinyxmlparser.cpp" />
     <ClCompile Include=".\src\util\util.cpp" />
     <ClCompile Include="src\OnlineSolverModel.cpp" />
+    <ClCompile Include="src\solver\ParallelSolver.cpp" />
     <ClCompile Include="src\Tree_Properties.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

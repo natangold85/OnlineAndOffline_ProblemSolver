@@ -23,7 +23,7 @@ nxnGridGlobalActions::nxnGridGlobalActions(int gridSize, int target, Self_Obj & 
 	s_isMoveFromEnemy = isMoveFromEnemyExist;
 }
 
-bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, OBS_TYPE lastObs, double& reward, OBS_TYPE& obs) const
+bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, double & reward, OBS_TYPE& obs) const
 {
 	nxnGridDetailedState state(s);
 
@@ -32,7 +32,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 
 	std::vector<double> randomObjectMoves;
 	CreateRandomVec(randomObjectMoves, CountMovingObjects() - 1);
-	
+
 	std::vector<double> randomEnemiesAttacks;
 	CreateRandomVec(randomEnemiesAttacks, m_enemyVec.size());
 
@@ -50,7 +50,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 
 	// if we are at the target end game with a win
 	if (m_targetIdx == state[0])
-	{	
+	{
 		reward = REWARD_WIN;
 		return true;
 	}
@@ -60,7 +60,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 	{
 		MoveToTarget(state, randomSelfAction);
 	}
-	else if(action == MOVE_TO_SHELTER & m_shelters.size() > 0)
+	else if (action == MOVE_TO_SHELTER & m_shelters.size() > 0)
 	{
 		MoveToShelter(state, randomSelfAction);
 	}
@@ -70,15 +70,14 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 		int enemyIdx = ((action - NumBasicActions()) / NumEnemyActions()) + 1;
 
 		int realEnemyLoc = state[enemyIdx];
-		int obsEnemyLoc = nxnGridDetailedState::GetObservedObjLocation(lastObs, enemyIdx);
 
 		// if enemy is dead or non observed move is illegal
-		if (Attack::IsDead(realEnemyLoc, m_gridSize) || Observation::IsNonObserved(obsEnemyLoc, m_gridSize))
-				reward += REWARD_ILLEGAL_MOVE;
+		if (Attack::IsDead(realEnemyLoc, m_gridSize) || !state.IsEnemyObserved(enemyIdx - 1))
+			reward += REWARD_ILLEGAL_MOVE;
 		else if (enemyAction == ATTACK)
 		{
-			Attack(state, obsEnemyLoc, randomSelfAction, reward);
-			
+			Attack(state, realEnemyLoc, randomSelfAction, reward);
+
 			if (state.IsNonInvDead(m_gridSize))
 			{
 				reward = REWARD_KILL_NINV;
@@ -89,7 +88,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 			reward += REWARD_KILL_ENEMY * Attack::IsDead(state[enemyIdx], m_gridSize);
 		}
 		else // action = movefromenemy
-			MoveFromEnemy(state, obsEnemyLoc, randomSelfAction, lastObs);
+			MoveFromEnemy(state, realEnemyLoc, randomSelfAction);
 	}
 
 
@@ -97,8 +96,7 @@ bool nxnGridGlobalActions::Step(State& s, double randomSelfAction, int action, O
 	SetNextPosition(state, randomObjectMoves);
 
 	// update observation
-	obs = FindObservation(state, randomSelfObservation);
-	
+	obs = UpdateObservation(state, randomSelfObservation);
 	//update state
 	s.state_id = state.GetStateId();
 	return false;
@@ -167,7 +165,7 @@ void nxnGridGlobalActions::Attack(nxnGridDetailedState & state, int target, doub
 		MoveToLocation(state, target, random);
 }
 
-void nxnGridGlobalActions::MoveFromEnemy(nxnGridDetailedState & state, int obsEnemyLoc, double random, OBS_TYPE lastObs) const
+void nxnGridGlobalActions::MoveFromEnemy(nxnGridDetailedState & state, int obsEnemyLoc, double random) const
 {
 	Coordinate enemy(obsEnemyLoc % m_gridSize, obsEnemyLoc / m_gridSize);
 	int newLoc = MoveFromLocation(state, enemy);
@@ -283,6 +281,19 @@ bool nxnGridGlobalActions::LegalAction(OBS_TYPE observedState, int action) const
 		legalAction = true;
 
 	return legalAction;
+}
+
+int nxnGridGlobalActions::randLegalAction(OBS_TYPE observation) const
+{
+	boolVec obsEnemies;
+	nxnGridDetailedState::GetEnemyObservedVec(observation, obsEnemies);
+	int action;
+	do
+	{
+		action = rand() % NumActions();
+	} while (action > NumBasicActions() && !obsEnemies[EnemyRelatedActionIdx(action)]);
+
+	return action;
 }
 
 } //end ns despot

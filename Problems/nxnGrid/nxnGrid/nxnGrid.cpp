@@ -40,8 +40,6 @@ const int nxnGrid::REWARD_MIN = min(REWARD_LOSS, REWARD_ILLEGAL_MOVE);
 const int nxnGrid::REWARD_STEP = 0;
 const int nxnGrid::REWARD_FIRE = 0;
 
-OBS_TYPE nxnGrid::s_nonObservedState = 0;
-
 // for lut
 OnlineSolverModel::OnlineSolverLUT nxnGrid::s_LUT;
 enum nxnGrid::CALCULATION_TYPE nxnGrid::s_calculationType = nxnGrid::WITHOUT;
@@ -58,27 +56,30 @@ double DetailedState::ObsProb(STATE_TYPE state_id, OBS_TYPE obs)
 
 nxnGridDetailedState::nxnGridDetailedState()
 : m_locations()
+, m_isEnemyObserved()
 {
 }
 
 nxnGridDetailedState::nxnGridDetailedState(unsigned int sizeState)
 : m_locations(sizeState)
+, m_isEnemyObserved(s_numEnemies)
 {
 }
 
 nxnGridDetailedState::nxnGridDetailedState(const State & state)
-: m_locations()
+: nxnGridDetailedState(state.state_id)
 {
-	InitLocationsFromId(state.state_id, m_locations);
 }
 
 nxnGridDetailedState::nxnGridDetailedState(STATE_TYPE stateId)
 : m_locations()
+, m_isEnemyObserved()
 {
 	InitLocationsFromId(stateId, m_locations);
+	InitIsObservedBoolFromId(stateId, m_isEnemyObserved);
 }
 
-void nxnGridDetailedState::InitLocationsFromId(STATE_TYPE state_id, intVec & locations)
+void nxnGridDetailedState::InitLocationsFromId(STATE_TYPE & state_id, intVec & locations)
 {
 	int numObjects = 1 + s_numEnemies + s_numNonInvolved;
 	locations.resize(numObjects);
@@ -92,6 +93,19 @@ void nxnGridDetailedState::InitLocationsFromId(STATE_TYPE state_id, intVec & loc
 	}
 }
 
+void nxnGridDetailedState::InitIsObservedBoolFromId(STATE_TYPE & state_id, boolVec & isObsVec)
+{
+	// assumption : is observed is 1 bit per object
+	isObsVec.resize(s_numEnemies);
+	int currBit = 1;
+	// retrieve enemy observed locations
+	for (int e = 0; e < s_numEnemies; ++e)
+	{
+		isObsVec[e] = state_id & currBit;
+		state_id >>= 1;
+	}
+}
+
 int nxnGridDetailedState::GetObjLocation(STATE_TYPE state_id, int objIdx)
 {
 	int locationBits = (1 << s_NUM_BITS_LOCATION) - 1;
@@ -100,22 +114,38 @@ int nxnGridDetailedState::GetObjLocation(STATE_TYPE state_id, int objIdx)
 	return state_id & locationBits;
 }
 
-int nxnGridDetailedState::GetObservedObjLocation(OBS_TYPE obs_id, int objIdx)
+bool nxnGridDetailedState::IsEnemyObserved(OBS_TYPE state_id, int enemyIdx)
 {
-	int locationBits = (1 << s_NUM_BITS_LOCATION) - 1;
-	obs_id >>= objIdx * s_NUM_BITS_LOCATION;
-
-	return obs_id & locationBits;
+	int numObj = 1 + s_numEnemies + s_numNonInvolved;
+	
+	state_id >>= numObj * s_NUM_BITS_LOCATION;
+	state_id >>= enemyIdx;
+	return state_id & 1;
 }
 
+void nxnGridDetailedState::GetEnemyObservedVec(OBS_TYPE obs_id, boolVec & enemyObsVec)
+{
+	int numObj = 1 + s_numEnemies + s_numNonInvolved;
+	obs_id >>= numObj * s_NUM_BITS_LOCATION;
+
+	InitIsObservedBoolFromId(obs_id, enemyObsVec);
+}
 
 STATE_TYPE nxnGridDetailedState::GetStateId() const
 {
+	// from end to start
 	STATE_TYPE stateId = 0;
+	for (int e = 0; e < s_numEnemies; ++e)
+	{
+		stateId <<= 1;
+		stateId |= m_isEnemyObserved[e] & 1;
+	}
+
+	int numLocationbits = (1 << s_NUM_BITS_LOCATION) - 1;
 	for (int obj = m_locations.size() - 1; obj >= 0; --obj)
 	{
 		stateId <<= s_NUM_BITS_LOCATION;
-		stateId |= m_locations[obj];
+		stateId |= m_locations[obj] & numLocationbits;
 	}
 
 	return stateId;
@@ -167,10 +197,10 @@ double nxnGridDetailedState::ObsProbOneObj(STATE_TYPE state_id, OBS_TYPE obs, in
 	int selfLoc = GetObjLocation(state_id, 0);
 	
 	if (objIdx == 0)
-		return selfLoc == GetObservedObjLocation(obs, 0);
+		return selfLoc == GetObjLocation(obs, 0);
 
 	int objLoc = GetObjLocation(state_id, objIdx);
-	int observedLoc = GetObservedObjLocation(obs, objIdx);
+	int observedLoc = GetObjLocation(obs, objIdx);
 	double pObs = 0.0;
 
 	// create possible observation of obj location
@@ -205,23 +235,28 @@ STATE_TYPE nxnGridDetailedState::MaxState()
 	return ret << numBits;
 }
 
-char nxnGridDetailedState::ObjIdentity(const intVec & locations, int location)
+char nxnGridDetailedState::ObjIdentity(int location) const
 {
-	if (locations[0] == location)
+	if (m_locations[0] == location)
 		return 'M';
 
 	int o = 1;
 
 	for (; o < s_numEnemies + 1; ++o)
 	{
-		if (locations[o] == location)
-			return o + '0';
+		if (m_locations[o] == location)
+		{
+			if (m_isEnemyObserved[o - 1])
+				return 'E';
+			else
+				return 'e';
+		}
 	}
 
 	int toEndOfNonInv = o + s_numNonInvolved;
 	for (o; o < toEndOfNonInv; ++o)
 	{
-		if (locations[o] == location)
+		if (m_locations[o] == location)
 			return 'N';
 	}
 
@@ -267,18 +302,18 @@ std::string nxnGridDetailedState::text() const
 	}
 	ret += ")\n";
 
-	PrintGrid(m_locations, ret);
+	PrintGrid(ret);
 	return ret;
 }
 
-void nxnGridDetailedState::PrintGrid(const intVec & locations, std::string & buffer)
+void nxnGridDetailedState::PrintGrid(std::string & buffer) const
 {
 	for (int y = 0; y < s_gridSize; ++y)
 	{
 		for (int x = 0; x < s_gridSize; ++x)
 		{
 			int loc = x + y * s_gridSize;
-			buffer += ObjIdentity(locations, loc);
+			buffer += ObjIdentity(loc);
 		}
 		buffer += "\n";
 	}
@@ -309,45 +344,12 @@ bool nxnGridDetailedState::IsNonInvDead(int gridSize) const
 
 void OnlineSolverModel::ChoosePreferredAction(POMCPPrior * prior, const DSPOMDP* m, doubleVec & expectedRewards)
 {
-	const nxnGrid * model = static_cast<const nxnGrid *>(m);
-	if (prior->history().Size() > 0)
-	{
-		nxnGridDetailedState beliefState(model->CountMovingObjects());
-		model->InitBeliefState(beliefState, prior->history());
-		model->ChoosePreferredActionIMP(beliefState, expectedRewards);
-	}
-	else
-	{
-		expectedRewards = doubleVec(model->NumActions(), REWARD_LOSS);
-	}
+	static_cast<const nxnGrid *>(m)->ChoosePreferredAction(prior, expectedRewards);
 }
 
 int OnlineSolverModel::ChoosePreferredAction(POMCPPrior * prior, const DSPOMDP* m, double & expectedReward)
 {
-	if (nxnGrid::GetLUTCalcType() != nxnGrid::WITHOUT)
-	{
-		doubleVec rewards;
-		ChoosePreferredAction(prior, m, rewards);
-		// if calc type != without return lut result else return random decision
-		return FindMaxReward(rewards, expectedReward);
-	}
-	else
-	{
-		// unknown reward for random action
-		expectedReward = REWARD_LOSS;
-		const nxnGrid * model = static_cast<const nxnGrid *>(m);
-
-		OBS_TYPE lastObs(prior->history().LastObservation());
-
-		// return rand action (if the action is not legal return other random action)
-		int randAction;
-		do
-		{
-			randAction = rand() % model->NumActions();
-		} while (!model->LegalAction(lastObs, randAction));
-
-		return randAction;
-	}
+	return static_cast<const nxnGrid *>(m)->ChoosePreferredAction(prior, expectedReward);
 }
 
 void OnlineSolverModel::InsertState2Buffer(uintVec & buffer, State * state)
@@ -383,130 +385,42 @@ void nxnGrid::InitLUT(OnlineSolverLUT & offlineLut, int offlineGridSize, CALCULA
 	s_LUT = offlineLut;
 }
 
+int nxnGrid::ChoosePreferredAction(POMCPPrior * prior, double & expectedReward) const
+{
+	if (nxnGrid::getLUTCalcType() != nxnGrid::WITHOUT)
+	{
+		doubleVec rewards;
+		ChoosePreferredAction(prior, rewards);
+		// if calc type != without return lut result else return random decision
+		return OnlineSolverModel::FindMaxReward(rewards, expectedReward);
+	}
+	else
+	{
+		// unknown reward for random action	
+		expectedReward = REWARD_LOSS;
+		return randLegalAction(prior->history().LastObservation());
+	}
+}
 
-// TODO : transfer this function to belief class
-//std::vector<State*> nxnGrid::Resample(int num, const std::vector<State*>& belief, const DSPOMDP* model, History history)
-//{
-//	// randomization regarding choosing particles
-//	double unit = 1.0 / num;
-//	double mass = Random::RANDOM.NextDouble(0, unit);
-//	int pos = 0;
-//	double cur = belief[0]->weight;
-//
-//	// for step
-//	double reward;
-//	OBS_TYPE obs;
-//
-//	auto modelCast = static_cast<const nxnGrid *>(model);
-//	std::vector<std::vector<std::pair<int, double>>> objLocations(modelCast->CountMovingObjects());
-//
-//
-//	int nonObservedLoc = Observation::NonObservedLoc(modelCast->GetGridSize());
-//	// to get num particles need to take from each observed object nth root of num particles
-//	double numObjLocations = pow(num, 1.0 / (modelCast->CountMovingObjects() - 1));
-//	// insert self location (is known)
-//	objLocations[0].emplace_back(DetailedState::GetObservedObjLocation(history.LastObservation(), 0), 1.0);
-//	// run on each observable object and create individualy for each object belief state
-//	for (int obj = 1; obj < modelCast->CountMovingObjects(); ++obj)
-//	{
-//		int startSim = history.Size();
-//		
-//		int loc = nonObservedLoc;
-//
-//		// running on all history and search for the last time observed the object
-//		for (; startSim > 0 & loc == nonObservedLoc; --startSim)
-//			loc = DetailedState::GetObservedObjLocation(history.Observation(startSim - 1), obj);
-//
-//		State* observedLoc = nullptr;
-//
-//		// if we observe the object remember state as initial condition
-//		if (loc != nonObservedLoc)
-//		{
-//			observedLoc = model->Allocate(history.Observation(startSim), 1.0);
-//			++startSim;  // start simulate step after the observation
-//		}
-//
-//		int trial = 0;
-//		int count = 0;
-//
-//		while (count < numObjLocations && trial < 200 * numObjLocations)
-//		{
-//			State* particle;
-//			OBS_TYPE prevObs;
-//			// if we didn't observed the object start from initial belief
-//			if (observedLoc == nullptr)
-//			{
-//				// Pick next particle
-//				while (mass > cur)
-//				{
-//					pos = (pos + 1) % belief.size();
-//					cur += belief[pos]->weight;
-//				}
-//				trial++;
-//
-//				mass += unit;
-//
-//				particle = model->Copy(belief[pos]);
-//				prevObs = NonObservedState();
-//			}
-//			else
-//			{
-//				particle = model->Copy(observedLoc);
-//				prevObs = history.Observation(startSim - 1);
-//			}
-//
-//			// Step through history
-//			double wgt = 1.0;
-//
-//			for (int i = startSim; i < history.Size(); i++)
-//			{
-//				model->Step(*particle, Random::RANDOM.NextDouble(), history.Action(i), prevObs, reward, obs);
-//				double prob = modelCast->ObsProbOneObj(history.Observation(i), *particle, history.Action(i), obj);
-//				if (prob <= 0)
-//				{
-//					model->Free(particle);
-//					break;
-//				}
-//				wgt *= prob;
-//				prevObs = history.Observation(i);
-//			}
-//
-//			// Add to obj available locations if survived
-//			if (particle->IsAllocated())
-//			{
-//				count++;
-//				int objLoc = DetailedState::GetObjLocation(particle->state_id, obj);
-//				objLocations[obj].emplace_back(objLoc, wgt);
-//			}
-//		}
-//
-//		if (observedLoc != nullptr)
-//			model->Free(observedLoc);
-//	}
-//
-//	std::vector<State*> sample;
-//	// create sample from object possible locations
-//	modelCast->CreateParticleVec(objLocations, sample);
-//
-//	double total_weight = 0;
-//	for (int i = 0; i < sample.size(); i++) {
-//		//sample[i]->weight = exp(sample[i]->weight - max_wgt);
-//		total_weight += sample[i]->weight;
-//	}
-//	for (int i = 0; i < sample.size(); i++) {
-//		sample[i]->weight = sample[i]->weight / total_weight;
-//	}
-//
-//	return sample;
-//}
-
+void nxnGrid::ChoosePreferredAction(POMCPPrior * prior, doubleVec & expectedRewards) const
+{
+	if (prior->history().Size() > 0)
+	{
+		nxnGridDetailedState beliefState(CountMovingObjects());
+		InitBeliefState(beliefState, prior->history());
+		ChoosePreferredActionIMP(beliefState, expectedRewards);
+	}
+	else
+	{
+		expectedRewards = doubleVec(NumActions(), REWARD_LOSS);
+		// TODO : when implementing illegal actions initialize this vector
+	}
+}
 
 void nxnGrid::AddObj(Attack_Obj&& obj)
 {
 	m_enemyVec.emplace_back(std::forward<Attack_Obj>(obj));
-	
 	nxnGridDetailedState::s_numEnemies = m_enemyVec.size();
-	s_nonObservedState = GetNonObservedState();
 
 	AddActionsToEnemy();
 }
@@ -516,7 +430,6 @@ void nxnGrid::AddObj(Movable_Obj&& obj)
 	m_nonInvolvedVec.emplace_back(std::forward<Movable_Obj>(obj));
 
 	nxnGridDetailedState::s_numNonInvolved = m_nonInvolvedVec.size();
-	s_nonObservedState = GetNonObservedState();
 
 }
 
@@ -525,25 +438,18 @@ void nxnGrid::AddObj(ObjInGrid&& obj)
 	m_shelters.emplace_back(std::forward<ObjInGrid>(obj));
 	
 	nxnGridDetailedState::s_shelters.emplace_back(obj.GetLocation().GetIdx(m_gridSize));
-	s_nonObservedState = GetNonObservedState();
 
 	AddActionsToShelter();
+}
+
+double nxnGrid::ObsProb(OBS_TYPE obs, const State& state, int action) const
+{
+	return nxnGridDetailedState::ObsProb(state.state_id, obs, m_gridSize, *m_self.GetObservation());
 }
 
 double nxnGrid::ObsProbOneObj(OBS_TYPE obs, const State & s, int action, int objIdx) const
 {
 	return nxnGridDetailedState::ObsProbOneObj(s.state_id, obs, objIdx, m_gridSize, *m_self.GetObservation());
-}
-
-OBS_TYPE nxnGrid::GetNonObservedState() const
-{
-	unsigned int numObjInState = CountMovingObjects();
-	nxnGridDetailedState nonObservedState(numObjInState);
-	
-	for (int o = 0; o < numObjInState; ++o)
-		nonObservedState[o] = Observation::NonObservedLoc(m_gridSize);
-
-	return nonObservedState.GetObsId();
 }
 
 void nxnGrid::CreateParticleVec(std::vector<std::vector<std::pair<int, double> > > & objLocations, std::vector<State*> & particles) const
@@ -679,15 +585,19 @@ State * nxnGrid::CreateStartState(std::string type) const
 {
 	nxnGridDetailedState state(CountMovingObjects());
 
+	// insert locations, and set enemy obs bool to flase
 	state[0] = m_self.GetLocation().GetIdx(m_gridSize);
 	
 	for (int i = 0; i < m_enemyVec.size(); ++i)
+	{
 		state[i + 1] = m_enemyVec[i].GetLocation().GetIdx(m_gridSize);
+		state.IsEnemyObserved(i, false);
+	}
 
 	for (int i = 0; i < m_nonInvolvedVec.size(); ++i)
 		state[i + 1 + m_enemyVec.size()] = m_nonInvolvedVec[i].GetLocation().GetIdx(m_gridSize);
 
-
+		
 	return new OnlineSolverState(state.GetStateId());
 }
 
@@ -705,9 +615,16 @@ Belief * nxnGrid::InitialBelief(const State * start, std::string type) const
 
 	double stateProb = 1.0 / numStates;
 	
+	// set enemy obs falg to false
+	for (int e = 0; e < m_enemyVec.size(); ++e)
+		state.IsEnemyObserved(e, false);
+
 	InitialBeliefStateRec(state, 1, stateProb, particles);
 
-	return new ParticleBelief(particles, this);
+	if (type == "nxnGridBelief")
+		return new nxnGridBelief(particles, this);
+	else
+		return new ParticleBelief(particles, this);
 }
 
 void nxnGrid::DisplayParameters(std::ofstream & out) const
@@ -769,7 +686,15 @@ void nxnGrid::PrintBelief(const Belief & belief, std::ostream & out) const
 void nxnGrid::PrintObs(const State & state, OBS_TYPE obs, std::ostream & out) const
 {
 	nxnGridDetailedState obsState(obs);
-	out << obsState.text() << "\n";
+
+	std::string txt = "(";
+	for (int i = 0; i < obsState.size(); ++i)
+	{
+		txt += std::to_string(obsState[i]) + ", ";
+	}
+	txt += ")\n";
+
+	out << txt << "\n";
 }
 
 void nxnGrid::PrintAction(int action, std::ostream & out) const
@@ -933,12 +858,15 @@ void nxnGrid::InitialBeliefStateRec(nxnGridDetailedState & state, int currObj, d
 		}
 	}
 }
-OBS_TYPE nxnGrid::FindObservation(const nxnGridDetailedState & state, double p) const
+OBS_TYPE nxnGrid::UpdateObservation(nxnGridDetailedState & state, double p) const
 {
 	nxnGridDetailedState obsState(CountMovingObjects());
 	obsState[0] = state[0];
 	// calculate observed state
 	DecreasePObsRec(state, obsState, 1, 1.0, p);
+
+	for (int i = 0; i < m_enemyVec.size(); ++i)
+		state.IsEnemyObserved(i, state[i + 1] == obsState[i + 1]);
 
 	// return the observed state
 	return obsState.GetStateId();
@@ -1229,7 +1157,7 @@ void nxnGrid::InitBeliefState(nxnGridDetailedState & beliefState, const History 
 		int loc = observedState[obj];
 		while (Observation::IsNonObserved(loc, m_gridSize) && currObs >= 0)
 		{
-			loc = nxnGridDetailedState::GetObservedObjLocation(h.Observation(currObs), obj);
+			loc = nxnGridDetailedState::GetObjLocation(h.Observation(currObs), obj);
 			--currObs;
 		}
 		// if the object is non observed through all history treat it as dead
@@ -1253,6 +1181,177 @@ void nxnGrid::GetNonValidLocations(const nxnGridDetailedState & state, int objId
 		if (obj != objIdx && state.IsProtected(obj))
 			nonValLoc.emplace_back(state[obj]);
 	}
+}
+
+void nxnGridBelief::Update(int action, OBS_TYPE obs)
+{
+	history_.Add(action, obs);
+
+	std::vector<State*> updated;
+	double total_weight = 0;
+	double reward;
+	OBS_TYPE o;
+	// Update particles
+	for (int i = 0; i <particles_.size(); i++) {
+		State* particle = particles_[i];
+
+		bool terminal = model_->Step(*particle, Random::RANDOM.NextDouble(), action, reward, o);
+
+		// copy fully observed params from observation
+		double prob = model_->ObsProb(obs, *particle, action);
+
+		if (!terminal && prob)
+		{ // Terminal state is not required to be explicitly represented and may not have any observation
+			particle->weight *= prob;
+			total_weight += particle->weight;
+			updated.push_back(particle);
+		}
+		else 
+		{
+			model_->Free(particle);
+		}
+	}
+
+	particles_ = updated;
+
+	// Resample if the particle set is empty
+	if (particles_.size() == 0)
+	{
+		Resample(num_particles_, initial_particles_, model_, history_);
+		logw << "Particle set is empty!  Resample\n";
+
+		//Update total weight so that effective number of particles are computed correctly 
+		total_weight = 0;
+		for (int i = 0; i < particles_.size(); i++) 
+		{
+			State* particle = particles_[i];
+			total_weight = total_weight + particle->weight;
+		}
+	}
+
+
+	double weight_square_sum = 0;
+	for (int i = 0; i < particles_.size(); i++) {
+		State* particle = particles_[i];
+		particle->weight /= total_weight;
+		weight_square_sum += particle->weight * particle->weight;
+	}
+
+	// Resample if the effective number of particles is "small"
+	double num_effective_particles = 1.0 / weight_square_sum;
+	if (num_effective_particles < num_particles_ / 2.0) {
+		std::vector<State*> new_belief = Belief::Sample(num_particles_, particles_,
+			model_);
+		for (int i = 0; i < particles_.size(); i++)
+			model_->Free(particles_[i]);
+
+		particles_ = new_belief;
+	}
+}
+std::vector<State*> nxnGridBelief::Resample(int num, const std::vector<State*>& belief, const DSPOMDP* model, History history)
+{
+	// randomization regarding choosing particles
+	double unit = 1.0 / num;
+	double mass = Random::RANDOM.NextDouble(0, unit);
+	int pos = 0;
+	double cur = belief[0]->weight;
+
+	// for step
+	double reward;
+	OBS_TYPE obs;
+
+	auto modelCast = static_cast<const nxnGrid *>(model);
+	std::vector<std::vector<std::pair<int, double>>> objLocations(modelCast->CountMovingObjects());
+
+	int nonObservedLoc = Observation::NonObservedLoc(modelCast->GetGridSize());
+
+	// to get num particles need to take from each observed object nth root of num particles
+	double numObjLocations = pow(num, 1.0 / (modelCast->CountMovingObjects() - 1));
+
+	// insert self location (is known)
+	objLocations[0].emplace_back(nxnGridDetailedState::GetObjLocation(history.LastObservation(), 0), 1.0);
+
+	// run on each observable object and create individualy for each object belief state
+	for (int obj = 1; obj < modelCast->CountMovingObjects(); ++obj)
+	{
+		int startSim = history.Size();
+		
+		int loc = nonObservedLoc;
+
+		// running on all history and search for the last time observed the object
+		for (; startSim > 0 & loc == nonObservedLoc; --startSim)
+			loc = nxnGridDetailedState::GetObjLocation(history.Observation(startSim - 1), obj);
+
+
+		// if we observe the object remember state as initial condition
+		if (loc != nonObservedLoc)
+			++startSim;  // start simulate step after successful observation
+
+		int trial = 0;
+		int count = 0;
+
+		while (count < numObjLocations && trial < 200 * numObjLocations)
+		{
+			State* particle;
+			// if we didn't observed the object start from initial belief
+			if (loc == nonObservedLoc)
+			{
+				// Pick next particle
+				while (mass > cur)
+				{
+					pos = (pos + 1) % belief.size();
+					cur += belief[pos]->weight;
+				}
+				trial++;
+
+				mass += unit;
+
+				particle = model->Copy(belief[pos]);
+			}
+			else
+			{
+				particle = model->Allocate(history.Observation(startSim), 1.0);
+			}
+
+			// Step through history
+			double wgt = 1.0;
+
+			for (int i = startSim; i < history.Size(); i++)
+			{
+				model->Step(*particle, Random::RANDOM.NextDouble(), history.Action(i), reward, obs);
+				double prob = modelCast->ObsProbOneObj(history.Observation(i), *particle, history.Action(i), obj);
+				if (prob <= 0)
+				{
+					model->Free(particle);
+					break;
+				}
+				wgt *= prob;
+			}
+
+			// Add to obj available locations if survived
+			if (particle->IsAllocated())
+			{
+				count++;
+				int objLoc = nxnGridDetailedState::GetObjLocation(particle->state_id, obj);
+				objLocations[obj].emplace_back(objLoc, wgt);
+			}
+		}
+	}
+
+	std::vector<State*> sample;
+	// create sample from object possible locations
+	modelCast->CreateParticleVec(objLocations, sample);
+
+	double total_weight = 0;
+	for (int i = 0; i < sample.size(); i++) {
+		//sample[i]->weight = exp(sample[i]->weight - max_wgt);
+		total_weight += sample[i]->weight;
+	}
+	for (int i = 0; i < sample.size(); i++) {
+		sample[i]->weight = sample[i]->weight / total_weight;
+	}
+
+	return sample;
 }
 
 } //end ns despot

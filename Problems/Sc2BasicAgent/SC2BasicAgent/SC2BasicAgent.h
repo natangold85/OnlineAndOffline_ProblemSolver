@@ -8,15 +8,14 @@
 namespace despot 
 {
 
-enum PIXEL {FREE = 0, RED, BLUE, NUM_PIXEL_OPTIONS};
-using miniMap_t = std::vector<PIXEL>;
-
+using pairInt = std::pair<int, int>;
 
 // translation between stateId to logical repressentation of state
 class SC2DetailedState : public DetailedState
 {
 public:
-	enum STATUS_COUNT { COMMAND_CENTER, SUPPLY_DEPOTS, BARRACKS, ARMY, MINERALS, NUM_COUNTS };
+	enum SELF_STATUS_COUNT { COMMAND_CENTER, SUPPLY_DEPOTS, BARRACKS, ARMY, MINERALS, NUM_COUNTS };
+	enum ENEMY_STATUS { BASE_POWER, ARMY_POWER, ARMY_LOCATION, ENEMY_OBSERVED_LOCATION, NUM_ENEMY_STATUS };
 
 	SC2DetailedState(int *arr);
 	SC2DetailedState();
@@ -24,11 +23,12 @@ public:
 	SC2DetailedState(const State & state);
 
 	/// init static members
-	static void InitStatic();
+	static void InitStatic(int baseLocation = -1, int enemyBaseLoc = -1, int gridSize = -1);
 
 	// Id to state interface functions
 	static void InitCountsFromId(STATE_TYPE & state_id, intVec & countVec);
-	static void InitMapFromId(STATE_TYPE & state_id, miniMap_t & map);
+	static void InitEnemyStatusFromId(STATE_TYPE & state_id, intVec & enemyStatus);
+	static void DeleteEnemyFromId(STATE_TYPE & state_id);
 
 	STATE_TYPE GetStateId() const;
 	OBS_TYPE GetObsId() const;
@@ -37,35 +37,26 @@ public:
 	static void CopyFullyObservedFromObservation(const OBS_TYPE obs, State * state);
 	
 	static STATE_TYPE GetIDCounts(const intVec & countVec);
-	static STATE_TYPE GetIDMiniMap(const miniMap_t & map);
-	static STATE_TYPE GetIDMiniMap(const miniMap_t & map, double random);
-
-	static void InitProbMat(const miniMap_t & map, std::vector<std::pair<int, double>> &probMat);
-	static void GetIDMiniMapRec(miniMap_t & map, const std::vector<std::pair<int, double>> &probMat, double prob, double & random, int currIdx);
+	static STATE_TYPE GetIDEnemyStatus(const intVec & enemyStatus);
+	STATE_TYPE GetIDEnemyDetails(double rand) const;
 
 	static double ObsProbPartialObsVars(STATE_TYPE state_id, OBS_TYPE obs);
 	
 	void StateVector(uintVec & vec) const;
-
-	miniMap_t & GetMiniMap() { return m_miniMap; };
-	const miniMap_t & GetMiniMap() const { return m_miniMap; };
 
 	int &operator[](int idx) { return m_countVec[idx]; };
 	int operator[](int idx) const { return m_countVec[idx]; };
 	
 	bool MaxCount(int idxCount) const;
 
-	int EnemyPower() const;
 	bool NoEnemy() const;
-	bool RedNearBase() const;
-	std::string MiniMapStr() const;
-
-	
+	bool IsObservedEnemy() const;
+	bool EnemyLocation(int & enemyPower) const;
+	bool UpdatePower(int attackLocation, int power);
 	// print state functions
 
 	/// print the state
 	std::string text() const;
-	std::string PrintGrid() const;
 
 	/*MEMBERS*/
 
@@ -73,25 +64,30 @@ public:
 	intVec m_countVec;
 
 	/*PARTIALLY OBSERVABLE*/
-	miniMap_t m_miniMap;
+	intVec m_enemyStatus;
 
 
-	static intVec InitNumBitsPerCount();
-	
 	/*STATIC MEMBERS*/
-	
-	static const STATE_TYPE s_ONE = 1;
+		
 	/// num bits
+	static intVec InitNumBitsPerCount();
+	static intVec InitNumBitsPerEnemyStatus();
+
 	static intVec s_NUM_BITS_PER_COUNT;
-	static const int s_NUM_BITS_PIXEL = 2;
 	static int s_NUM_BITS_COUNT_PART;
 
-	/// gridSize
+	static intVec s_NUM_BITS_PER_ENEMY_STATUS;
+	static int s_NUM_BITS_ENEMY_STATUS_PART;
+
+	/// static details
 	static int s_gridSize;
 	static int s_baseLocation;
 	static int s_enemyBaseLocation;
+
+	static const int s_NON_VALID_LOCATION = -1;
+	// static lut
 	static std::vector<std::string> s_countNames;
-	static std::vector<char> s_pixelStatusNames;
+	static std::vector<std::string> s_enemyStatusNames;
 };
 
 
@@ -100,11 +96,15 @@ public:
 * =============================================================================*/
 class SC2BasicAgent : public OnlineSolverModel
 {	
-	enum ACTION { NOTHING, BUILD_SUPPLY_DEPOT, BUILD_BARRACKS, TRAIN_ARMY, ATTACK, NUM_ACTIONS };
-
+	using EnemyTransitionLUT = std::map<int, int>;
+	using AttacksLUT = std::map<pairInt, pairInt>;
 public:
-	SC2BasicAgent(int gridSize, int baseLocation, int enemyBaseLoc);
+	enum ACTION { NOTHING, BUILD_SUPPLY_DEPOT, BUILD_BARRACKS, TRAIN_ARMY, ATTACK, NUM_ACTIONS };
+	
+	SC2BasicAgent(int gridSize, int baseLocation);
 	~SC2BasicAgent() = default;
+
+	static void InitQTable(OnlineSolverLUT & qTable, int gridSize, int baseLocation);
 
 	/// take one step for a given state and action return true if the simulation terminated, update reward and observation
 	virtual bool Step(State& s, double random, int action, double & reward, OBS_TYPE& obs) const override;
@@ -118,9 +118,6 @@ public:
 
 	/// recieve init state from simulator
 	virtual void InitState() override;
-
-	/// return grid size
-	int GetGridSize() const { return m_gridSize; };
 
 	/// return initial state
 	virtual State *CreateStartState(std::string type) const override;
@@ -136,24 +133,28 @@ public:
 	virtual void PrintObs(const State& state, OBS_TYPE obs, std::ostream& out = std::cout) const override;
 	virtual void PrintAction(int action, std::ostream & out) const override;
 
-private:
-
+protected:
 	/// return random legal action given last observation
 	virtual bool LegalAction(OBS_TYPE observation, int action) const override;
 
 	/// recieve current state from simulator and update reward and observation
 	virtual bool RcvStateIMP(intVec & data, State * s, double & reward, OBS_TYPE & obs) const override;
 
+private:
+	/// return grid size
+	int getGridSize() const { return m_gridSize; };
+
+
 	// ACTIONS FUNCTION:
-	void BuildSupplyDepot(SC2DetailedState & state, double & reward) const;
-	void BuildBarracks(SC2DetailedState & state, double & reward) const;
-	void TrainArmy(SC2DetailedState & state, double & reward) const;
-	void Scout(SC2DetailedState & state, double & reward) const;
-	void DefendBase(SC2DetailedState & state, double & reward) const;
-	void Attack(SC2DetailedState & state, double random, double & reward) const;
+	void buildSupplyDepot(SC2DetailedState & state, double & reward) const;
+	void buildBarracks(SC2DetailedState & state, double & reward) const;
+	void trainArmy(SC2DetailedState & state, double & reward) const;
+	void scout(SC2DetailedState & state, double & reward) const;
+	void defendBase(SC2DetailedState & state, double & reward) const;
+	void attack(SC2DetailedState & state, double random, double & reward) const;
 
 	/// advance the state to the next step position (regarding to other objects movement)
-	void SetNextState(SC2DetailedState & state, double spreadingEnemy, double enemyAttack) const;
+	void setNextState(SC2DetailedState & state, double spreadingEnemy, double enemyAttack) const;
 
 protected:
 	int m_gridSize;
@@ -163,7 +164,16 @@ protected:
 	// lut for actions names
 	static std::vector<std::string> s_ACTION_STR;
 
+	static OnlineSolverLUT s_Q_TABLE;
+	static EnemyTransitionLUT s_ENEMY_TRANSITION_LUT;
+	static AttacksLUT s_ATTACKS_LUT;
 public:
+
+	// power transition
+	static const int NUM_START_SCV = 10;
+	static const int COMMAND_CENTER_2_POWER = 9;
+	static const int SUPPLY_DEPOT_2_POWER = 4;
+	static const int BARRACKS_2_POWER = 4;
 
 	/// prices of minerals for different action
 	static const int TRAINING_PRICE = 50;

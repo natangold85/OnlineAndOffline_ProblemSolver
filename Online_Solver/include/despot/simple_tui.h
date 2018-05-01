@@ -5,6 +5,7 @@
 #include "./solver/despot.h"
 #include "./solver/aems.h"
 #include "./solver/pomcp.h"
+#include "./solver/ParallelSolver.h"
 
 #include "./util/optionparser.h"
 #include "./util/seeds.h"

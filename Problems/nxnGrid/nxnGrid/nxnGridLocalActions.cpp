@@ -17,18 +17,18 @@ nxnGridLocalActions::nxnGridLocalActions(int gridSize, int target, Self_Obj & se
 	s_actionsStr = Move_Properties::s_directionNamesLUT;
 }
 
-bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYPE lastObs, double& reward, OBS_TYPE& obs) const
+bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, double& reward, OBS_TYPE& obs) const
 {
 	nxnGridDetailedState state(s);
 	enum ACTION action = static_cast<enum ACTION>(a);
 
 	// drawing more random numbers for each variable
 	double randomSelfObservation = rand();
-	randomSelfObservation /=  RAND_MAX;
+	randomSelfObservation /= RAND_MAX;
 
 	std::vector<double> randomObjectMoves;
 	CreateRandomVec(randomObjectMoves, CountMovingObjects() - 1);
-	
+
 	std::vector<double> randomEnemiesAttacks;
 	CreateRandomVec(randomEnemiesAttacks, m_enemyVec.size());
 
@@ -46,7 +46,7 @@ bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYP
 
 	// if we are at the target end game with a win
 	if (m_targetIdx == state[0])
-	{	
+	{
 		reward = REWARD_WIN;
 		return true;
 	}
@@ -62,13 +62,12 @@ bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYP
 		int enemyIdx = action - NUM_BASIC_ACTIONS;
 
 		int realEnemyLoc = state[enemyIdx];
-		int obsEnemyLoc = nxnGridDetailedState::GetObservedObjLocation(lastObs, enemyIdx);
-			
-		if (Attack::IsDead(realEnemyLoc, m_gridSize) || Observation::IsNonObserved(obsEnemyLoc, m_gridSize))
+
+		if (Attack::IsDead(realEnemyLoc, m_gridSize) || !state.IsEnemyObserved(enemyIdx - 1))
 			reward += REWARD_ILLEGAL_MOVE;
 		else
 		{
-			Attack(state, obsEnemyLoc, randomSelfAction, reward);
+			Attack(state, realEnemyLoc, randomSelfAction, reward);
 			if (state.IsNonInvDead(m_gridSize))
 			{
 				reward = REWARD_KILL_NINV;
@@ -81,11 +80,11 @@ bool nxnGridLocalActions::Step(State& s, double randomSelfAction, int a, OBS_TYP
 
 	// set next position of the objects on grid
 	SetNextPosition(state, randomObjectMoves);
-	// update observation
-	obs = FindObservation(state, randomSelfObservation);
+	
+	// update observation and observation part in state
+	obs = UpdateObservation(state, randomSelfObservation);
 	//update state
 	s.state_id = state.GetStateId();
-
 	return false;
 }
 
@@ -190,6 +189,19 @@ bool nxnGridLocalActions::LegalAction(OBS_TYPE observedState, int action) const
 	}
 	if (!Attack::IsDead(obsState[enemyIdxAction], m_gridSize) && !Observation::IsNonObserved(obsState[enemyIdxAction], m_gridSize))
 		legalAction = true;
+
+	return action;
+}
+
+int nxnGridLocalActions::randLegalAction(OBS_TYPE observation) const
+{
+	boolVec obsEnemies;
+	nxnGridDetailedState::GetEnemyObservedVec(observation, obsEnemies);
+	int action;
+	do
+	{
+		action = rand() % NumActions();
+	} while (action > NUM_BASIC_ACTIONS && !obsEnemies[EnemyRelatedActionIdx(action)]);
 
 	return action;
 }

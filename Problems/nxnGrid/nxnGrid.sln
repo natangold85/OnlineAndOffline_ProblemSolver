@@ -4,6 +4,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 12.0.21005.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nxnGrid", "nxnGrid\nxnGrid.vcxproj", "{8F5166CD-AF6C-4169-ABF4-70BC6B112289}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1099D84A-80FD-400E-8C2E-91148AD47D60} = {1099D84A-80FD-400E-8C2E-91148AD47D60}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Despot", "..\..\Online_Solver\Despot.vcxproj", "{1099D84A-80FD-400E-8C2E-91148AD47D60}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +26,14 @@ Global
 		{8F5166CD-AF6C-4169-ABF4-70BC6B112289}.Release|Win32.Build.0 = Release|Win32
 		{8F5166CD-AF6C-4169-ABF4-70BC6B112289}.Release|x64.ActiveCfg = Release|x64
 		{8F5166CD-AF6C-4169-ABF4-70BC6B112289}.Release|x64.Build.0 = Release|x64
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Debug|Win32.ActiveCfg = Debug|Win32
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Debug|Win32.Build.0 = Debug|Win32
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Debug|x64.ActiveCfg = Debug|x64
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Debug|x64.Build.0 = Debug|x64
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Release|Win32.ActiveCfg = Release|Win32
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Release|Win32.Build.0 = Release|Win32
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Release|x64.ActiveCfg = Release|x64
+		{1099D84A-80FD-400E-8C2E-91148AD47D60}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

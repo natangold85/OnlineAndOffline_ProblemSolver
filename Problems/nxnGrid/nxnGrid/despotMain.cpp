@@ -25,6 +25,7 @@ using namespace despot;
 
 // solver type :
 static const std::string solverType = "Parallel_POMCP"; //"POMCP";  //"Parallel_POMCP"; // "user"
+static const std::string beliefType = "nxnGridBelief"; //"DEFAULT";  //"nxnGridBelief";
 static const bool s_PARALLEL_RUN = solverType == "Parallel_POMCP";
 enum MODELS_AVAILABLE { NXN_LOCAL_ACTIONS, NXN_GLOBAL_ACTIONS };
 
@@ -206,7 +207,7 @@ void Run(int argc, char* argv[], std::string & outputFName, int numRuns)
 	{
 		std::cout << "\n\n\trun #" << i << ":\n";
 		output << "\n\n\trun #" << i << ":\n";
-		NXNGrid().run(argc, argv, output, solverType);
+		NXNGrid().run(argc, argv, output, solverType, beliefType);
 		output.flush();
 	}
 
@@ -222,11 +223,11 @@ void InitObjectsLocations(std::vector<std::vector<int>> & objVec, int gridSize)
 	int obj = 0;
 
 	// insert self locations
-	objVec[obj].emplace_back(62);
+	objVec[obj].emplace_back(0);
 	++obj;
 
 	// insert enemies locations
-	std::vector<int> enemy1Loc{ 69 /*99, 98, 89, 88*/};
+	std::vector<int> enemy1Loc{  99, 98, 89, 88};
 	objVec[obj] = enemy1Loc;
 	++obj;
 
@@ -234,11 +235,11 @@ void InitObjectsLocations(std::vector<std::vector<int>> & objVec, int gridSize)
 	//objVec[obj] = enemy2loc;
 	//++obj;
 
-	std::vector<int> nonInv1Loc{ 99/* 55, 56, 65, 66*/ };
+	std::vector<int> nonInv1Loc{  55, 56, 65, 66 };
 	objVec[obj] = nonInv1Loc;
 	++obj;
 
-	std::vector<int> shelter1Loc{ 62/*,63,72,73*/ };
+	std::vector<int> shelter1Loc{ 62,63,72,73 };
 	objVec[obj] = shelter1Loc;
 
 }
@@ -246,11 +247,11 @@ Attack_Obj CreateEnemy(int x, int y, int gridSize)
 {
 	int attackRange = gridSize / 4;
 
-	double pHit = 1;
+	double pHit = 0.4;
 	std::shared_ptr<Attack> attack(new DirectAttack(attackRange, pHit));
 
 	double pStay = 0.4;
-	double pTowardSelf = 0.6;
+	double pTowardSelf = 0.2;
 	double pSpawnIfdead = 0;
 
 	Coordinate location(x, y);

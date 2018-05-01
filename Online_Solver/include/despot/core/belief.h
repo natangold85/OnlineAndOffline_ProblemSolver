@@ -74,6 +74,27 @@ public:
 	virtual std::string text() const;
 };
 
+
+/* =============================================================================
+*  all variables are fully observable there for no need to keep trace of belief and history
+* =============================================================================*/
+class FullyObservedBelief : public Belief
+{
+public:
+	FullyObservedBelief(State * beliefState, const DSPOMDP* model)
+		: Belief(model) 
+		, m_currBaliefState(beliefState)
+		{}
+
+protected:
+	virtual Belief* MakeCopy() const override;
+	virtual std::vector<State*> Sample(int num) const override;
+	virtual void Update(int action, OBS_TYPE obs) override;
+
+private:
+	State * m_currBaliefState;
+};
+
 } // namespace despot
 
 #endif

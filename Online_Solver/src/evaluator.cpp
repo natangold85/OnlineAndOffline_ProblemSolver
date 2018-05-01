@@ -1,6 +1,7 @@
 #include "../include/despot/evaluator.h"
 
 #include "../include/despot/solver/pomcp.h"
+#include "../include/despot/solver/ParallelSolver.h"
 
 #include "../include/despot/OnlineSolverModel.h"
 
@@ -181,6 +182,7 @@ void Evaluator::RunRoundForParallel(int round)
 			action = treeMngrData.m_action;
 
 			terminal = ExecuteAction(action, reward, obs);
+
 			currState.state_id = state_->state_id;
 
 			GetTreeProperties(treeProp);
@@ -189,6 +191,7 @@ void Evaluator::RunRoundForParallel(int round)
 			std::lock_guard<std::mutex> flagsLock(treeMngrData.m_flagsMutex);
 			treeMngrData.m_observationRecieved = true;
 			treeMngrData.m_actionRecieved = false;
+			treeMngrData.m_terminal = terminal;
 		}
 
 		// print data
@@ -203,11 +206,6 @@ void Evaluator::RunRoundForParallel(int round)
 		std::cout << "- ObsProb = " << model_->ObsProb(obs, currState, action) << "\n";
 
 		std::cout << "\n- StepReward = " << reward << "\n\n\n";
-	}
-
-	{ // inform to builder that round is over
-		std::lock_guard<std::mutex> lock(treeMngrData.m_flagsMutex);
-		treeMngrData.m_terminal = true;
 	}
 
 	treeMngr.join();
@@ -801,7 +799,7 @@ void POMDPEvaluator::InitRound(bool isParallelSolver) {
 		ParallelSolver * parSolver = dynamic_cast<ParallelSolver *>(solver_);
 		for (int sol = 0; sol < parSolver->NumSolvers(); ++sol)
 		{
-			Belief* belief = model_->InitialBelief(NULL, belief_type_);
+			Belief* belief = model_->InitialBelief(state_, belief_type_);
 			parSolver->belief(belief, sol);
 		}
 	}

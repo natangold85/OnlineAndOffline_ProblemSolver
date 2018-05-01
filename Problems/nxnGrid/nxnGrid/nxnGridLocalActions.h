@@ -31,13 +31,17 @@ public:
 	// Functions for self use
 
 	/// take one step for a given state and action return true if the simulation terminated, update reward and observation
-	virtual bool Step(State& s, double random, int action, OBS_TYPE lastObs, double & reward, OBS_TYPE& obs) const /*override*/;
-	virtual bool Step(State& s, double random, int action, double & reward, OBS_TYPE& obs) const override { return false; };
+	virtual bool Step(State& s, double random, int action, double & reward, OBS_TYPE& obs) const override;
 
 	virtual int NumActions() const override;
 
 	/// return the min reward valued action (needed for the despot algorithm)
 	virtual ValuedAction GetMinRewardAction() const override { return ValuedAction(NO_DIRECTION, REWARD_MIN); }
+
+protected:
+	virtual bool LegalAction(OBS_TYPE observedState, int action) const override;
+	//return random legal action given last observation
+	virtual int randLegalAction(OBS_TYPE observation) const override;
 
 private:
 	// add actions to specific enemy
@@ -55,8 +59,6 @@ private:
 	virtual int EnemyRelatedActionIdx(int action) const override;
 
 	virtual bool EnemyRelatedAction(int action) const override;
-
-	virtual bool LegalAction(OBS_TYPE observedState, int action) const override;
 };
 
 } // end ns despot
